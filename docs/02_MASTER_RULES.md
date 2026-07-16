@@ -81,3 +81,16 @@ Explain the problem.
 Wait for instructions.
 
 Never guess.
+
+## Git Workflow
+
+Every approved implementation step must result in exactly one Git commit.
+
+After every completed task:
+
+1. Verify the game manually.
+2. Commit changes.
+3. Push to GitHub.
+4. Wait for approval.
+
+Never implement multiple refactoring steps in one commit.
