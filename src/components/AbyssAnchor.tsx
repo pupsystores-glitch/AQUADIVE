@@ -52,6 +52,7 @@ import {
   SPAWN_JITTER_PX,
 } from "@/game/constants";
 import type { HistoryEntry, LastWin, RunState } from "@/game/types";
+import { lerpColor } from "@/shared/utils/color";
 
 // Preloaded anchor sprite — shared across mounts.
 const ANCHOR_IMAGE: HTMLImageElement | null = typeof window !== "undefined" ? new Image() : null;
@@ -647,10 +648,6 @@ export default function AbyssAnchor() {
 // ============================================================
 // Canvas drawing helpers
 // ============================================================
-
-function lerpColor(a: number[], b: number[], t: number): number[] {
-  return a.map((v, i) => Math.round(v + (b[i] - v) * t));
-}
 
 // Jackpot multiplier when the anchor reaches the sea floor.
 // Weighted: 50% → 50–100×, 35% → 100–200×, 15% → 200–500×.

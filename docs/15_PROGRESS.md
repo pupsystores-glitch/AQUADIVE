@@ -54,6 +54,14 @@ Completed Tasks:
 
 ## TASK 004 — Foundation Improvements (In Progress)
 
+### Commit 5 — Shared pure utilities
+
+- Date: 2026-07-16
+- Summary: `src/shared/utils/` created; `lerpColor` moved verbatim into `src/shared/utils/color.ts` and exported. Scope audit found it is the ONLY function in AbyssAnchor.tsx meeting all purity criteria (no React, no Canvas, no component state, deterministic) — all others are hooks/component methods, canvas draw functions, React icons, or `sampleJackpot` (nondeterministic gameplay economics, excluded twice over). No padding utilities were invented (dead code is forbidden).
+- Files modified: `src/shared/utils/color.ts` (new), `src/components/AbyssAnchor.tsx` (imports `lerpColor`).
+- Architectural decisions: pure color math sits on the shared dependency floor, usable by rendering and future systems alike.
+- Risks: none; tsc clean, lint at baseline.
+
 ### Commit 4 — Architectural folder structure
 
 - Date: 2026-07-16
