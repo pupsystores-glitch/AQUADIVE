@@ -2,7 +2,7 @@
 
 Status:
 
-Project Initialization
+Foundation Refactor (Phase 3) — In Progress
 
 ---
 
@@ -12,7 +12,7 @@ Project Audit
 
 Status:
 
-Pending
+Completed (2026-07-16)
 
 ---
 
@@ -22,7 +22,7 @@ Architecture Review
 
 Status:
 
-Pending
+Completed (2026-07-16) — Architecture Blueprint delivered
 
 ---
 
@@ -32,7 +32,7 @@ Project Refactoring Plan
 
 Status:
 
-Pending
+Completed (2026-07-16) — 15-step frontend migration plan approved
 
 ---
 
@@ -42,7 +42,7 @@ Foundation Improvements
 
 Status:
 
-Pending
+In Progress — Commit 1 (Step 1.1: gameplay constants extracted) done, awaiting approval
 
 ---
 

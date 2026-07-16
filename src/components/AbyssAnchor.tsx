@@ -13,18 +13,26 @@ import {
   type Phase,
 } from "@/lib/abyss-game";
 import anchorImgSrc from "@/assets/anchor.png";
+import {
+  ANCHOR_DRAW_H,
+  ANCHOR_RING_Y_FRAC,
+  BETTING_WINDOW_SECONDS,
+  CASH_FLASH_MS,
+  CHAIN_MAX_DEPTH,
+  CHEST_RESULT_TO_IDLE_MS,
+  COLLISION_DX_FRAC,
+  COLLISION_DY_PX,
+  CRASH_BANNER_MS,
+  CREATURE_SPAWN_EVERY,
+  HISTORY_LIMIT,
+  JACKPOT_FLASH_MS,
+  QUICK_BETS,
+  SHIP_IMPACT_TO_CHESTS_MS,
+} from "@/game/config";
 
 // Preloaded anchor sprite — shared across mounts.
 const ANCHOR_IMAGE: HTMLImageElement | null = typeof window !== "undefined" ? new Image() : null;
 if (ANCHOR_IMAGE) ANCHOR_IMAGE.src = anchorImgSrc;
-// Ring center vertical position within the anchor sprite (fraction of image height).
-const ANCHOR_RING_Y_FRAC = 0.135;
-// Drawn height of the anchor sprite on screen.
-const ANCHOR_DRAW_H = 155;
-
-const CHAIN_MAX_DEPTH = 4200; // world px – when reached → bonus zone
-const CREATURE_SPAWN_EVERY = 52; // world px between spawns (denser sea life)
-const QUICK_BETS = [1, 5, 10, 25, 100];
 
 interface RunState {
   startedAt: number;
@@ -49,7 +57,7 @@ export default function AbyssAnchor() {
   const [hasCashed, setHasCashed] = useState(false);
   const [cashFlash, setCashFlash] = useState(false);
   const [participating, setParticipating] = useState(false);
-  const [countdown, setCountdown] = useState(5);
+  const [countdown, setCountdown] = useState(BETTING_WINDOW_SECONDS);
 
   const runRef = useRef<RunState | null>(null);
   const phaseRef = useRef<Phase>("idle");
@@ -132,11 +140,10 @@ export default function AbyssAnchor() {
   // ----- auto-round countdown while idle (5s betting window) -----
   useEffect(() => {
     if (phase !== "idle") return;
-    const DURATION = 5;
     const startedAt = performance.now();
-    setCountdown(DURATION);
+    setCountdown(BETTING_WINDOW_SECONDS);
     const iv = window.setInterval(() => {
-      const rem = DURATION - (performance.now() - startedAt) / 1000;
+      const rem = BETTING_WINDOW_SECONDS - (performance.now() - startedAt) / 1000;
       if (rem <= 0) {
         window.clearInterval(iv);
         setCountdown(0);
@@ -159,11 +166,11 @@ export default function AbyssAnchor() {
     const win = +(run.bet * m).toFixed(2);
     setBalance((b) => +(b + win).toFixed(2));
     setLastWin({ amount: win, mult: m });
-    setHistory((h) => [{ mult: m, crashed: false }, ...h].slice(0, 12));
+    setHistory((h) => [{ mult: m, crashed: false }, ...h].slice(0, HISTORY_LIMIT));
     hasCashedRef.current = true;
     setHasCashed(true);
     setCashFlash(true);
-    setTimeout(() => setCashFlash(false), 1800);
+    setTimeout(() => setCashFlash(false), CASH_FLASH_MS);
     // stay in "diving" — anchor continues until the chain snaps.
   }, [multiplier]);
 
@@ -184,8 +191,8 @@ export default function AbyssAnchor() {
       setBalance((b) => +(b + delta).toFixed(2));
       setLastWin({ amount: totalWin, mult: finalMult });
     }
-    setHistory((h) => [{ mult: finalMult, crashed: false }, ...h].slice(0, 12));
-    setTimeout(() => setPhase("idle"), 2200);
+    setHistory((h) => [{ mult: finalMult, crashed: false }, ...h].slice(0, HISTORY_LIMIT));
+    setTimeout(() => setPhase("idle"), CHEST_RESULT_TO_IDLE_MS);
   }, [chests, multiplier]);
 
   // reset per-round flags whenever we return to the betting window
@@ -220,12 +227,12 @@ export default function AbyssAnchor() {
           m = runRef.current.crashAt;
           setMultiplier(m);
           if (!hasCashedRef.current) {
-            setHistory((h) => [{ mult: m, crashed: true }, ...h].slice(0, 12));
+            setHistory((h) => [{ mult: m, crashed: true }, ...h].slice(0, HISTORY_LIMIT));
           }
           setPhase("crashed");
           setTimeout(() => {
             if (phaseRef.current === "crashed") setPhase("idle");
-          }, 2400);
+          }, CRASH_BANNER_MS);
         } else {
           setMultiplier(m);
         }
@@ -245,7 +252,7 @@ export default function AbyssAnchor() {
         for (const c of creaturesRef.current) {
           if (c.consumed) continue;
           const dy = Math.abs(c.worldY - anchorWorldY);
-          if (dy < 28 && Math.abs(c.x - 0.5) < 0.18) {
+          if (dy < COLLISION_DY_PX && Math.abs(c.x - 0.5) < COLLISION_DX_FRAC) {
             if (c.kind === "goldfish") {
               c.consumed = true;
               boostRef.current = Math.min(1, boostRef.current + 0.8);
@@ -268,9 +275,9 @@ export default function AbyssAnchor() {
             hasCashedRef.current = true;
             setHasCashed(true);
             setCashFlash(true);
-            setTimeout(() => setCashFlash(false), 2200);
+            setTimeout(() => setCashFlash(false), JACKPOT_FLASH_MS);
           }
-          setHistory((h) => [{ mult: jackpot, crashed: false }, ...h].slice(0, 12));
+          setHistory((h) => [{ mult: jackpot, crashed: false }, ...h].slice(0, HISTORY_LIMIT));
           // brief impact frame, then reveal 3 chests to multiply the jackpot
           setPhase("cashed");
           setTimeout(() => {
@@ -279,7 +286,7 @@ export default function AbyssAnchor() {
               setChosenChest(null);
               setPhase("bonus");
             }
-          }, 1400);
+          }, SHIP_IMPACT_TO_CHESTS_MS);
         }
       }
 

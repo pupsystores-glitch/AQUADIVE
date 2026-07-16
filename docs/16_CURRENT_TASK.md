@@ -1,19 +1,21 @@
 # CURRENT TASK
 
-TASK 001
+TASK 004
 
-Project Audit
+Foundation Refactor
 
 Objective:
 
-Understand the existing project.
+Execute the approved frontend refactoring plan (TASK 003) as small, behavior-preserving commits.
 
-Do NOT modify code.
+Progress:
 
-Do NOT create new features.
+- Commit 1 — Step 1.1 (extract gameplay constants into `src/game/config.ts`): DONE, awaiting approval.
+- Next (needs approval): Step 1.2 — move stray game math (`sampleJackpot`, `lerpColor`) out of the view file.
 
-Analyze everything.
+Rules for this task:
 
-Produce a complete technical report.
-
-Wait for approval before continuing.
+- Preserve gameplay, visuals, rendering and UI exactly.
+- One refactoring step per commit.
+- The game must remain playable after every commit.
+- Wait for approval between steps.
