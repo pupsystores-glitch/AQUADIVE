@@ -1,25 +1,25 @@
 # CURRENT TASK
 
-TASK 004
+TASK 005
 
-Foundation Refactor
+Sprint 2 — Rendering Architecture
 
 Objective:
 
-Execute the approved frontend refactoring plan (TASK 003) as small, behavior-preserving commits.
+Design and then extract the rendering system, per the approved roadmap (Phase 2 deliverable feeding Phase 4).
 
 Progress:
 
-- Commit 1 — Step 1.1 (extract gameplay constants into `src/game/config.ts`): DONE, verified.
-- Commit 2 — Type system extraction (`src/game/types.ts`): DONE, verified.
-- Commit 3 — Static constants extraction (`src/game/constants.ts`): DONE, verified.
-- Commit 4 — Architectural folders (`src/engine`, `src/rendering`, `src/network`, `src/audio`, `src/shared` + READMEs): DONE, verified.
-- Commit 5 — Shared pure utilities (`src/shared/utils/color.ts`, `lerpColor` moved): DONE, awaiting approval.
-- Next (needs approval): remaining half of Step 1.2 — move `sampleJackpot` (gameplay economics) from the view file into `src/lib/abyss-game.ts`.
+- Commit 1 — Architecture Planning (`docs/05_RENDERING_ARCHITECTURE.md`, documentation only): DONE, awaiting approval.
+- Next (needs approval): Commit R1 — move the eight pure draw helpers verbatim into `src/rendering/draw/` (+ `theme.ts`), per §19 of the rendering architecture document.
+
+Notes carried over from Sprint 1 (TASK 004):
+
+- Sprint 1 closed after Commit 5. The remaining half of Step 1.2 (move `sampleJackpot` into `src/lib/abyss-game.ts`) was not executed and remains pending; it must be scheduled as its own commit when approved.
 
 Rules for this task:
 
-- Preserve gameplay, visuals, rendering and UI exactly.
-- One refactoring step per commit.
-- The game must remain playable after every commit.
-- Wait for approval between steps.
+- Rendering commits follow `docs/05_RENDERING_ARCHITECTURE.md` §19 (extraction order) and §21 (validation) exactly.
+- Behavior-preserving only; no gameplay, visual, or tuning changes.
+- One extraction step per commit; the game must remain playable after every commit.
+- Wait for approval between commits.

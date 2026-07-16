@@ -2,7 +2,7 @@
 
 Status:
 
-Foundation Refactor (Phase 3) — In Progress
+Sprint 2 — Rendering Architecture (TASK 005) — In Progress
 
 ---
 
@@ -38,11 +38,21 @@ Completed (2026-07-16) — 15-step frontend migration plan approved
 
 TASK 004
 
-Foundation Improvements
+Foundation Improvements (Sprint 1)
 
 Status:
 
-In Progress — Commits 1–4 verified; Commit 5 (shared pure utilities) done, awaiting approval
+Closed (2026-07-17) — Commits 1–5 delivered; remaining half of Step 1.2 (`sampleJackpot` move) deferred, to be scheduled as its own commit
+
+---
+
+TASK 005
+
+Sprint 2 — Rendering Architecture
+
+Status:
+
+In Progress — Commit 1 (Architecture Planning, `docs/05_RENDERING_ARCHITECTURE.md`) done, awaiting approval
 
 ---
 

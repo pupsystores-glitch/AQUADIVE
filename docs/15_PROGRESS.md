@@ -16,9 +16,21 @@ Rules:
 
 Current Status:
 
-Phase 3 (Core Refactor) in progress — TASK 004 Commit 1 complete
+Sprint 2 (Rendering Architecture, TASK 005) in progress — Commit 1 (planning document) complete
 
 Completed Tasks:
+
+---
+
+## TASK 005 — Sprint 2: Rendering Architecture (In Progress)
+
+### Commit 1 — Architecture Planning (documentation only)
+
+- Date: 2026-07-17
+- Summary: `docs/05_RENDERING_ARCHITECTURE.md` created — the complete rendering architecture blueprint (21 sections): current-pipeline audit, layered SceneRenderer design (Background / Environment / World / Actor / Effects), Camera class, RenderState contract, per-entity renderer specs, DOM-vs-canvas UI boundary, performance strategy with explicit "do when" triggers, AssetManager design, PixiJS migration stance (Canvas 2D retained; no graphics-API abstraction layer), communication model (state pull + FX events, renderer emits nothing), target folder structure, 5-commit extraction order (R1–R5), risks, and per-commit validation protocol. No code modified.
+- Files modified: `docs/05_RENDERING_ARCHITECTURE.md` (new), `docs/14_TASKS.md`, `docs/15_PROGRESS.md`, `docs/16_CURRENT_TASK.md` (tracking updates).
+- Architectural decisions: fixed ordered layer list instead of a hierarchical scene graph; renderer as pure `(RenderState, time) → pixels` consumer with a no-clock/no-RNG rule (Effects layer exempted for RNG); vertical-only anchor-locked camera reproducing the current transform bit-for-bit; theme.ts as the white-label color boundary; deliberate refusal to abstract the drawing API before a PixiJS migration.
+- Risks: none to the running game (docs only). Sprint 1's deferred `sampleJackpot` move remains pending and is recorded in CURRENT_TASK.md.
 
 ---
 
@@ -52,7 +64,7 @@ Completed Tasks:
 
 ---
 
-## TASK 004 — Foundation Improvements (In Progress)
+## TASK 004 — Foundation Improvements (Sprint 1 — Closed 2026-07-17; Step 1.2 second half deferred)
 
 ### Commit 5 — Shared pure utilities
 
