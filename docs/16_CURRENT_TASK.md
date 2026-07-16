@@ -10,8 +10,9 @@ Design and then extract the rendering system, per the approved roadmap (Phase 2 
 
 Progress:
 
-- Commit 1 — Architecture Planning (`docs/05_RENDERING_ARCHITECTURE.md`, documentation only): DONE, awaiting approval.
-- Next (needs approval): Commit R1 — move the eight pure draw helpers verbatim into `src/rendering/draw/` (+ `theme.ts`), per §19 of the rendering architecture document.
+- Commit 1 — Architecture Planning (`docs/05_RENDERING_ARCHITECTURE.md`, documentation only): DONE, verified.
+- Commit 2 — R1: eight draw helpers moved verbatim into `src/rendering/draw/` + `theme.ts` color tokens: DONE, awaiting approval.
+- Next (needs approval): Commit R2 — `src/rendering/camera.ts`, replacing the inline `worldToScreen` closure and culling checks, per §19.
 
 Notes carried over from Sprint 1 (TASK 004):
 

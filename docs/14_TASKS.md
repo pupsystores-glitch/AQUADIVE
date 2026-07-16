@@ -52,7 +52,7 @@ Sprint 2 — Rendering Architecture
 
 Status:
 
-In Progress — Commit 1 (Architecture Planning, `docs/05_RENDERING_ARCHITECTURE.md`) done, awaiting approval
+In Progress — Commit 1 (Architecture Planning) verified; Commit 2 (R1 draw-module extraction) done, awaiting approval
 
 ---
 

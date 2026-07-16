@@ -24,6 +24,15 @@ Completed Tasks:
 
 ## TASK 005 — Sprint 2: Rendering Architecture (In Progress)
 
+### Commit 2 — R1: Pure draw modules extracted
+
+- Date: 2026-07-17
+- Summary: The eight canvas draw helpers (`drawShip`, `drawChain`, `drawShipImpact`, `drawAnchor`, `drawCreature`, `drawFish`, `drawSeaFloor`, `drawTreasure`) moved verbatim from the game component into `src/rendering/draw/` (six modules per §18); static color literals became named tokens in `src/rendering/theme.ts` with byte-identical values (alpha-modulated FX colors exposed as functions taking the per-frame alpha; the alpha math stays at call sites). The preloaded anchor sprite moved with `drawAnchor` (AssetManager replaces it in R4). Component now imports the draw functions; `sampleJackpot` (non-rendering, pending Step 1.2 move) and the SVG icon components stayed put. AbyssAnchor.tsx: 1,415 → 683 lines.
+- Files modified: `src/rendering/theme.ts`, `src/rendering/draw/{ship,chain,anchor,creatures,sea-floor,impact-fx}.ts` (new), `src/components/AbyssAnchor.tsx` (deletions + 6 imports only), `src/rendering/README.md`, `docs/05_RENDERING_ARCHITECTURE.md` (§18 import-allowance correction recorded during extraction).
+- Architectural decisions: §18 corrected per the doc's own rule — draw modules may additionally use type-only imports from `src/lib/abyss-game` and `SHIP_IMPACT_FX_SECONDS` from `src/game/constants` until R5.
+- Verification: scripted verbatim check — ordered sequence of all 658 numeric literals identical old→new; string-literal multiset and template-literal colors identical. `tsc --noEmit` clean; production build clean; dev server SSR-renders the game page without errors. Lint improved 49→38 errors (7 warnings unchanged): 11 pre-existing prettier errors sat on moved lines and the new modules are prettier-clean; zero new findings (3 findings inside the untouched `pickChest` block changed message granularity only — git diff confirms no content change there).
+- Risks: client-side visual identity still requires the developer's manual gameplay pass (per docs/18_GIT_WORKFLOW.md step 2).
+
 ### Commit 1 — Architecture Planning (documentation only)
 
 - Date: 2026-07-17

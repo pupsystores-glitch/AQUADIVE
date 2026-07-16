@@ -2,6 +2,8 @@
 
 Canvas 2D rendering system.
 
+Binding design: `docs/05_RENDERING_ARCHITECTURE.md`.
+
 ## Responsibility
 
 Turns an engine state snapshot into pixels: the scene renderer, the camera
@@ -14,7 +16,10 @@ FX), and asset loading (sprites, future atlases).
 - Reads engine state; never mutates it.
 - May subscribe to engine events for fire-and-forget FX triggers only.
 
-## Planned contents (per the approved refactoring plan)
+## Contents (per docs/05_RENDERING_ARCHITECTURE.md §18–19)
 
-Draw modules — ship, chain, anchor, creatures, sea floor, treasure, impact
-FX (Step 2.1); SceneRenderer + camera (Step 2.2); asset module (Step 2.3).
+Done — R1: `theme.ts` (color tokens) and `draw/` modules (ship, chain,
+anchor, creatures, sea floor + treasure, impact FX), moved verbatim.
+
+Pending — R2: `camera.ts`; R3: `render-state.ts`, `scene-renderer.ts`,
+`layers/`; R4: `assets.ts`; R5: FX timing handoff.

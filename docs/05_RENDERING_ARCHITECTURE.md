@@ -317,7 +317,7 @@ src/rendering/
     └── impact-fx.ts       drawShipImpact
 ```
 
-Conventions: direct module imports, no barrels until a folder has a stable public surface (Sprint-1 decision); `draw/` modules export pure `(ctx, ...) => void` functions and may import only `theme.ts`, `assets.ts` and `src/shared`; `layers/` may additionally import `camera.ts` and `render-state.ts`; only `scene-renderer.ts` is imported from outside `src/rendering`.
+Conventions: direct module imports, no barrels until a folder has a stable public surface (Sprint-1 decision); `draw/` modules export pure `(ctx, ...) => void` functions and may import only `theme.ts`, `assets.ts` and `src/shared` (correction recorded during R1: additionally, type-only imports from `src/lib/abyss-game` (`CreatureKind`) until the domain types move in the engine extraction, and `SHIP_IMPACT_FX_SECONDS` from `src/game/constants` until the R5 timing handoff removes it); `layers/` may additionally import `camera.ts` and `render-state.ts`; only `scene-renderer.ts` is imported from outside `src/rendering`.
 
 ## 19. Rendering Extraction Order
 
