@@ -29,6 +29,28 @@ import {
   QUICK_BETS,
   SHIP_IMPACT_TO_CHESTS_MS,
 } from "@/game/config";
+import {
+  ANCHOR_SCREEN_Y_FRAC,
+  ANCHOR_WORLD_OFFSET_PX,
+  BG_BOTTOM_ABYSS,
+  BG_BOTTOM_SURFACE,
+  BG_TOP_ABYSS,
+  BG_TOP_SURFACE,
+  BOOST_DECAY_PER_SECOND,
+  BOOST_GAIN_PER_GOLDFISH,
+  BOOST_MULTIPLIER_BONUS,
+  BOOST_SPEED_FACTOR,
+  COUNTDOWN_TICK_MS,
+  DEFAULT_BALANCE,
+  DEFAULT_BET,
+  DIVE_SPAWN_DEPTH_PX,
+  INITIAL_SPAWN_DEPTH_PX,
+  MAX_DPR,
+  MAX_TICK_SECONDS,
+  SHIP_IMPACT_FX_SECONDS,
+  SPAWN_AHEAD_PX,
+  SPAWN_JITTER_PX,
+} from "@/game/constants";
 import type { HistoryEntry, LastWin, RunState } from "@/game/types";
 
 // Preloaded anchor sprite — shared across mounts.
@@ -39,8 +61,8 @@ export default function AbyssAnchor() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  const [balance, setBalance] = useState(1000);
-  const [bet, setBet] = useState(5);
+  const [balance, setBalance] = useState(DEFAULT_BALANCE);
+  const [bet, setBet] = useState(DEFAULT_BET);
   const [phase, setPhase] = useState<Phase>("idle");
   const [multiplier, setMultiplier] = useState(1);
   const [lastWin, setLastWin] = useState<LastWin | null>(null);
@@ -57,14 +79,14 @@ export default function AbyssAnchor() {
   const phaseRef = useRef<Phase>("idle");
   const worldYRef = useRef(0); // anchor's depth in world px
   const creaturesRef = useRef<Creature[]>([]);
-  const nextSpawnAtRef = useRef(120);
+  const nextSpawnAtRef = useRef(INITIAL_SPAWN_DEPTH_PX);
   const nextCreatureId = useRef(1);
   const lastTsRef = useRef<number | null>(null);
   const boostRef = useRef(0);
   const swayRef = useRef(0);
   const hasCashedRef = useRef(false);
   const participatingRef = useRef(false);
-  const betRef = useRef(5);
+  const betRef = useRef(DEFAULT_BET);
   const shipImpactRef = useRef<number | null>(null); // performance.now() when anchor hit ship
   const jackpotMultRef = useRef(1); // multiplier locked at ship impact, used for chest math
 
@@ -119,7 +141,7 @@ export default function AbyssAnchor() {
     };
     worldYRef.current = 0;
     creaturesRef.current = [];
-    nextSpawnAtRef.current = 60;
+    nextSpawnAtRef.current = DIVE_SPAWN_DEPTH_PX;
     boostRef.current = 0;
     setBoost(0);
     setMultiplier(1);
@@ -145,7 +167,7 @@ export default function AbyssAnchor() {
       } else {
         setCountdown(rem);
       }
-    }, 100);
+    }, COUNTDOWN_TICK_MS);
     return () => window.clearInterval(iv);
   }, [phase, beginDive]);
 
@@ -202,7 +224,7 @@ export default function AbyssAnchor() {
   useEffect(() => {
     const tick = (ts: number) => {
       const last = lastTsRef.current ?? ts;
-      const dt = Math.min(0.05, (ts - last) / 1000);
+      const dt = Math.min(MAX_TICK_SECONDS, (ts - last) / 1000);
       lastTsRef.current = ts;
       swayRef.current += dt;
 
@@ -211,8 +233,8 @@ export default function AbyssAnchor() {
         let m = multiplierAt(elapsed);
         // boost decays
         if (boostRef.current > 0) {
-          boostRef.current = Math.max(0, boostRef.current - dt * 0.6);
-          m += boostRef.current * 0.4; // small bump while active
+          boostRef.current = Math.max(0, boostRef.current - dt * BOOST_DECAY_PER_SECOND);
+          m += boostRef.current * BOOST_MULTIPLIER_BONUS; // small bump while active
           setBoost(boostRef.current);
         }
 
@@ -232,24 +254,24 @@ export default function AbyssAnchor() {
         }
 
         // descent
-        const speed = descentSpeed(m) * (1 + boostRef.current * 0.8);
+        const speed = descentSpeed(m) * (1 + boostRef.current * BOOST_SPEED_FACTOR);
         worldYRef.current += speed * dt;
 
         // spawn creatures
-        while (worldYRef.current + 900 > nextSpawnAtRef.current) {
+        while (worldYRef.current + SPAWN_AHEAD_PX > nextSpawnAtRef.current) {
           spawnCreature(nextSpawnAtRef.current);
-          nextSpawnAtRef.current += CREATURE_SPAWN_EVERY - Math.random() * 18;
+          nextSpawnAtRef.current += CREATURE_SPAWN_EVERY - Math.random() * SPAWN_JITTER_PX;
         }
 
         // collision with goldfish → boost
-        const anchorWorldY = worldYRef.current + 220;
+        const anchorWorldY = worldYRef.current + ANCHOR_WORLD_OFFSET_PX;
         for (const c of creaturesRef.current) {
           if (c.consumed) continue;
           const dy = Math.abs(c.worldY - anchorWorldY);
           if (dy < COLLISION_DY_PX && Math.abs(c.x - 0.5) < COLLISION_DX_FRAC) {
             if (c.kind === "goldfish") {
               c.consumed = true;
-              boostRef.current = Math.min(1, boostRef.current + 0.8);
+              boostRef.current = Math.min(1, boostRef.current + BOOST_GAIN_PER_GOLDFISH);
               setBoost(boostRef.current);
             }
           }
@@ -299,7 +321,7 @@ export default function AbyssAnchor() {
   const drawScene = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
@@ -315,8 +337,8 @@ export default function AbyssAnchor() {
     const depthRatio = Math.min(1, worldY / CHAIN_MAX_DEPTH);
 
     // Background gradient — shifts darker with depth
-    const top = lerpColor([60, 130, 165], [8, 18, 40], depthRatio);
-    const bot = lerpColor([14, 40, 80], [2, 6, 18], depthRatio);
+    const top = lerpColor(BG_TOP_SURFACE, BG_TOP_ABYSS, depthRatio);
+    const bot = lerpColor(BG_BOTTOM_SURFACE, BG_BOTTOM_ABYSS, depthRatio);
     const grd = ctx.createLinearGradient(0, 0, 0, h);
     grd.addColorStop(0, `rgb(${top.join(",")})`);
     grd.addColorStop(1, `rgb(${bot.join(",")})`);
@@ -358,8 +380,8 @@ export default function AbyssAnchor() {
     }
 
     // World camera: anchor is fixed near 55% of screen.
-    const anchorScreenY = h * 0.55;
-    const worldToScreen = (wy: number) => anchorScreenY + (wy - (worldY + 220));
+    const anchorScreenY = h * ANCHOR_SCREEN_Y_FRAC;
+    const worldToScreen = (wy: number) => anchorScreenY + (wy - (worldY + ANCHOR_WORLD_OFFSET_PX));
 
     // Draw creatures (behind anchor)
     for (const c of creaturesRef.current) {
@@ -376,7 +398,7 @@ export default function AbyssAnchor() {
     }
 
     // Sea floor + shipwreck — drawn BEFORE the anchor so the anchor visibly lands on top.
-    const floorScreenY = worldToScreen(CHAIN_MAX_DEPTH + 220);
+    const floorScreenY = worldToScreen(CHAIN_MAX_DEPTH + ANCHOR_WORLD_OFFSET_PX);
     if (floorScreenY < h + 100) {
       drawSeaFloor(ctx, w, h, floorScreenY);
     }
@@ -403,7 +425,7 @@ export default function AbyssAnchor() {
     // Ship impact burst — pink jackpot lightning for ~1.4s after hit
     if (shipImpactRef.current != null) {
       const dt = (performance.now() - shipImpactRef.current) / 1000;
-      if (dt < 1.4) {
+      if (dt < SHIP_IMPACT_FX_SECONDS) {
         drawShipImpact(ctx, anchorX, anchorScreenY + drawH * 0.3, w, h, dt);
       } else {
         shipImpactRef.current = null;
@@ -790,7 +812,7 @@ function drawShipImpact(
   h: number,
   dt: number,
 ) {
-  const life = Math.min(1, dt / 1.4);
+  const life = Math.min(1, dt / SHIP_IMPACT_FX_SECONDS);
   const alpha = 1 - life;
   ctx.save();
 
