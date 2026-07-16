@@ -42,7 +42,7 @@ Foundation Improvements
 
 Status:
 
-In Progress — Commit 1 (Step 1.1: gameplay constants extracted) done, awaiting approval
+In Progress — Commit 1 (constants) verified; Commit 2 (type system extraction) done, awaiting approval
 
 ---
 

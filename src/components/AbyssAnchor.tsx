@@ -29,17 +29,11 @@ import {
   QUICK_BETS,
   SHIP_IMPACT_TO_CHESTS_MS,
 } from "@/game/config";
+import type { HistoryEntry, LastWin, RunState } from "@/game/types";
 
 // Preloaded anchor sprite — shared across mounts.
 const ANCHOR_IMAGE: HTMLImageElement | null = typeof window !== "undefined" ? new Image() : null;
 if (ANCHOR_IMAGE) ANCHOR_IMAGE.src = anchorImgSrc;
-
-interface RunState {
-  startedAt: number;
-  crashAt: number; // multiplier at which it crashes
-  bet: number;
-  bonusTriggered: boolean;
-}
 
 export default function AbyssAnchor() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -49,8 +43,8 @@ export default function AbyssAnchor() {
   const [bet, setBet] = useState(5);
   const [phase, setPhase] = useState<Phase>("idle");
   const [multiplier, setMultiplier] = useState(1);
-  const [lastWin, setLastWin] = useState<{ amount: number; mult: number } | null>(null);
-  const [history, setHistory] = useState<{ mult: number; crashed: boolean }[]>([]);
+  const [lastWin, setLastWin] = useState<LastWin | null>(null);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [chests, setChests] = useState<[BonusChest, BonusChest, BonusChest] | null>(null);
   const [chosenChest, setChosenChest] = useState<BonusChest | null>(null);
   const [boost, setBoost] = useState(0); // 0..1 short boost when goldfish

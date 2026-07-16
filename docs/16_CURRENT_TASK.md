@@ -10,7 +10,8 @@ Execute the approved frontend refactoring plan (TASK 003) as small, behavior-pre
 
 Progress:
 
-- Commit 1 — Step 1.1 (extract gameplay constants into `src/game/config.ts`): DONE, awaiting approval.
+- Commit 1 — Step 1.1 (extract gameplay constants into `src/game/config.ts`): DONE, verified.
+- Commit 2 — Type system extraction (`src/game/types.ts`): DONE, awaiting approval.
 - Next (needs approval): Step 1.2 — move stray game math (`sampleJackpot`, `lerpColor`) out of the view file.
 
 Rules for this task:
