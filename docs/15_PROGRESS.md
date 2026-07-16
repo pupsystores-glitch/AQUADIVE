@@ -54,6 +54,14 @@ Completed Tasks:
 
 ## TASK 004 — Foundation Improvements (In Progress)
 
+### Commit 4 — Architectural folder structure
+
+- Date: 2026-07-16
+- Summary: Long-term frontend structure prepared: `src/engine`, `src/rendering`, `src/network`, `src/audio`, `src/shared` created, each with a README defining its responsibility, boundaries, and which approved plan steps will populate it. No code moved, no implementations, zero runtime change (documentation files only).
+- Files modified: five new `README.md` files (one per folder).
+- Architectural decisions: no empty `index.ts` barrels — the project convention (src/lib, src/game) uses direct module imports, and empty barrels would be placeholder code, which the Master Rules forbid; barrels can be added when a folder first exports something. `src/shared` declared the dependency floor (imports from no other layer).
+- Risks: none.
+
 ### Commit 3 — Static constants extraction
 
 - Date: 2026-07-16

@@ -42,7 +42,7 @@ Foundation Improvements
 
 Status:
 
-In Progress — Commits 1–2 verified; Commit 3 (static constants extraction) done, awaiting approval
+In Progress — Commits 1–3 verified; Commit 4 (architectural folder structure) done, awaiting approval
 
 ---
 
