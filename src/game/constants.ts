@@ -64,6 +64,9 @@ export const MAX_DPR = 2;
 /** Anchor's fixed vertical position on screen (fraction of canvas height). */
 export const ANCHOR_SCREEN_Y_FRAC = 0.55;
 
+/** Surface ship's world-Y position (world px above the dive start); shared by the World layer (ship draw/culling) and Actor layer (chain top attachment). */
+export const SHIP_WORLD_Y = -180;
+
 /** Ship-impact jackpot FX lifetime (seconds); pairs with SHIP_IMPACT_TO_CHESTS_MS. */
 export const SHIP_IMPACT_FX_SECONDS = 1.4;
 

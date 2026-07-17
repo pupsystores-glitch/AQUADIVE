@@ -13,8 +13,6 @@ import {
   type Phase,
 } from "@/lib/abyss-game";
 import {
-  ANCHOR_DRAW_H,
-  ANCHOR_RING_Y_FRAC,
   BETTING_WINDOW_SECONDS,
   CASH_FLASH_MS,
   CHAIN_MAX_DEPTH,
@@ -29,12 +27,7 @@ import {
   SHIP_IMPACT_TO_CHESTS_MS,
 } from "@/game/config";
 import {
-  ANCHOR_SCREEN_Y_FRAC,
   ANCHOR_WORLD_OFFSET_PX,
-  BG_BOTTOM_ABYSS,
-  BG_BOTTOM_SURFACE,
-  BG_TOP_ABYSS,
-  BG_TOP_SURFACE,
   BOOST_DECAY_PER_SECOND,
   BOOST_GAIN_PER_GOLDFISH,
   BOOST_MULTIPLIER_BONUS,
@@ -44,26 +37,18 @@ import {
   DEFAULT_BET,
   DIVE_SPAWN_DEPTH_PX,
   INITIAL_SPAWN_DEPTH_PX,
-  MAX_DPR,
   MAX_TICK_SECONDS,
   SHIP_IMPACT_FX_SECONDS,
   SPAWN_AHEAD_PX,
   SPAWN_JITTER_PX,
 } from "@/game/constants";
 import type { HistoryEntry, LastWin, RunState } from "@/game/types";
-import { Camera } from "@/rendering/camera";
-import { drawAnchor } from "@/rendering/draw/anchor";
-import { drawChain } from "@/rendering/draw/chain";
-import { drawCreature } from "@/rendering/draw/creatures";
-import { drawShipImpact } from "@/rendering/draw/impact-fx";
-import { drawSeaFloor } from "@/rendering/draw/sea-floor";
-import { drawShip } from "@/rendering/draw/ship";
-import { lerpColor } from "@/shared/utils/color";
+import { SceneRenderer, type RenderState } from "@/rendering/scene-renderer";
 
 export default function AbyssAnchor() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
-  const cameraRef = useRef<Camera | null>(null);
+  const rendererRef = useRef<SceneRenderer | null>(null);
 
   const [balance, setBalance] = useState(DEFAULT_BALANCE);
   const [bet, setBet] = useState(DEFAULT_BET);
@@ -226,6 +211,44 @@ export default function AbyssAnchor() {
 
   // ----- game loop -----
   useEffect(() => {
+    // Assemble the RenderState snapshot from refs only (never render-scope
+    // variables — docs/05_RENDERING_ARCHITECTURE.md §20 risk 3) and hand it
+    // to the SceneRenderer. The rAF loop stays here: the renderer never
+    // schedules itself (§17).
+    const renderFrame = (frameDt: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      if (rendererRef.current === null) rendererRef.current = new SceneRenderer(canvas);
+      const renderer = rendererRef.current;
+      renderer.resize(canvas.clientWidth, canvas.clientHeight, window.devicePixelRatio || 1);
+
+      // Ship-impact FX clock: performance.now() bookkeeping stays with the
+      // caller (§12); the renderer only ever sees elapsed seconds.
+      let shipImpact: RenderState["shipImpact"] = null;
+      if (shipImpactRef.current != null) {
+        const elapsed = (performance.now() - shipImpactRef.current) / 1000;
+        if (elapsed < SHIP_IMPACT_FX_SECONDS) {
+          shipImpact = { elapsed };
+        } else {
+          shipImpactRef.current = null;
+        }
+      }
+
+      const worldY = worldYRef.current;
+      renderer.frame(
+        {
+          phase: phaseRef.current,
+          worldY,
+          depthRatio: Math.min(1, worldY / CHAIN_MAX_DEPTH),
+          boost: boostRef.current,
+          creatures: creaturesRef.current,
+          crashed: phaseRef.current === "crashed",
+          shipImpact,
+        },
+        { animTime: swayRef.current, frameDt },
+      );
+    };
+
     const tick = (ts: number) => {
       const last = lastTsRef.current ?? ts;
       const dt = Math.min(MAX_TICK_SECONDS, (ts - last) / 1000);
@@ -310,135 +333,17 @@ export default function AbyssAnchor() {
         }
       }
 
-      drawScene();
+      renderFrame(dt);
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       lastTsRef.current = null;
+      rendererRef.current?.dispose();
+      rendererRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spawnCreature]);
-
-  // ----- drawing -----
-  const drawScene = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-    }
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
-
-    const worldY = worldYRef.current;
-    const depthRatio = Math.min(1, worldY / CHAIN_MAX_DEPTH);
-
-    // Background gradient — shifts darker with depth
-    const top = lerpColor(BG_TOP_SURFACE, BG_TOP_ABYSS, depthRatio);
-    const bot = lerpColor(BG_BOTTOM_SURFACE, BG_BOTTOM_ABYSS, depthRatio);
-    const grd = ctx.createLinearGradient(0, 0, 0, h);
-    grd.addColorStop(0, `rgb(${top.join(",")})`);
-    grd.addColorStop(1, `rgb(${bot.join(",")})`);
-    ctx.fillStyle = grd;
-    ctx.fillRect(0, 0, w, h);
-
-    // Light rays from surface (fade with depth)
-    const rayAlpha = (1 - depthRatio) * 0.18;
-    if (rayAlpha > 0.01) {
-      ctx.save();
-      ctx.globalCompositeOperation = "screen";
-      for (let i = 0; i < 4; i++) {
-        const x = (w * (i + 0.5)) / 4 + Math.sin(swayRef.current * 0.4 + i) * 14;
-        const g = ctx.createLinearGradient(x, 0, x, h * 0.7);
-        g.addColorStop(0, `rgba(180,220,255,${rayAlpha})`);
-        g.addColorStop(1, "rgba(180,220,255,0)");
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.moveTo(x - 30, 0);
-        ctx.lineTo(x + 30, 0);
-        ctx.lineTo(x + 80, h * 0.7);
-        ctx.lineTo(x - 80, h * 0.7);
-        ctx.closePath();
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-
-    // Particles / bubbles
-    const bubbleSeed = swayRef.current;
-    ctx.fillStyle = "rgba(255,255,255,0.18)";
-    for (let i = 0; i < 24; i++) {
-      const bx = ((i * 73 + bubbleSeed * 12) % w);
-      const by = (h - ((i * 41 + bubbleSeed * 60) % h));
-      const br = 1 + ((i * 17) % 3);
-      ctx.beginPath();
-      ctx.arc(bx, by, br, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // World camera: anchor is fixed near 55% of screen.
-    if (cameraRef.current === null) cameraRef.current = new Camera();
-    const camera = cameraRef.current;
-    camera.setViewport(w, h);
-    camera.follow(worldY);
-    const anchorScreenY = h * ANCHOR_SCREEN_Y_FRAC;
-
-    // Draw creatures (behind anchor)
-    for (const c of creaturesRef.current) {
-      if (!camera.isVisibleY(c.worldY, 120)) continue;
-      const sy = camera.worldToScreenY(c.worldY);
-      const sx = c.x * w + Math.sin(swayRef.current * 0.6 + c.phase) * 12 * c.dir;
-      drawCreature(ctx, c.kind, sx, sy, c.size, swayRef.current + c.phase, c.consumed === true);
-    }
-
-    // Surface ship (only visible near surface)
-    const shipScreenY = camera.worldToScreenY(-180);
-    if (camera.isVisibleY(-180, 120, 80)) {
-      drawShip(ctx, w / 2, shipScreenY, swayRef.current);
-    }
-
-    // Sea floor + shipwreck — drawn BEFORE the anchor so the anchor visibly lands on top.
-    const floorScreenY = camera.worldToScreenY(CHAIN_MAX_DEPTH + ANCHOR_WORLD_OFFSET_PX);
-    if (camera.isVisibleY(CHAIN_MAX_DEPTH + ANCHOR_WORLD_OFFSET_PX, Infinity, 100)) {
-      drawSeaFloor(ctx, w, h, floorScreenY);
-    }
-
-    // Anchor sway — faster & wider for a more natural pendulum swing.
-    const anchorX = w / 2 + Math.sin(swayRef.current * 1.4) * 38 + Math.sin(swayRef.current * 0.7) * 10;
-    const swayAngle = Math.sin(swayRef.current * 1.8) * 0.22 + Math.sin(swayRef.current * 0.9) * 0.05;
-
-    // Position the anchor sprite so its horizontal stock bar sits near anchorScreenY.
-    const drawH = ANCHOR_DRAW_H;
-    const ringOffsetFromCenter = drawH * (0.5 - ANCHOR_RING_Y_FRAC); // ring above sprite center
-    // Ring position accounting for rotation around the sprite center.
-    const anchorRingY = anchorScreenY - Math.cos(swayAngle) * ringOffsetFromCenter;
-    const anchorRingX = anchorX + Math.sin(swayAngle) * ringOffsetFromCenter;
-    const ringR = 9;
-
-    // Chain from the surface down to the anchor's shackle ring
-    const chainStartY = Math.min(shipScreenY + 40, 0);
-    drawChain(ctx, w / 2, chainStartY, anchorRingX, anchorRingY - ringR, swayRef.current);
-
-    // Anchor sprite (in front of shipwreck so it lands ON the ship)
-    drawAnchor(ctx, anchorX, anchorScreenY, swayAngle, phaseRef.current === "crashed", boostRef.current, drawH);
-
-    // Ship impact burst — pink jackpot lightning for ~1.4s after hit
-    if (shipImpactRef.current != null) {
-      const dt = (performance.now() - shipImpactRef.current) / 1000;
-      if (dt < SHIP_IMPACT_FX_SECONDS) {
-        drawShipImpact(ctx, anchorX, anchorScreenY + drawH * 0.3, w, h, dt);
-      } else {
-        shipImpactRef.current = null;
-      }
-    }
-  }, [bet]);
 
   // ----- UI -----
   const inDive = phase === "diving";

@@ -16,13 +16,22 @@ Rules:
 
 Current Status:
 
-Sprint 2 (Rendering Architecture, TASK 005) in progress — Commits 1–2 approved; Commit 3 (R2 camera) complete
+Sprint 2 (Rendering Architecture, TASK 005) in progress — Commits 1–3 approved; Commit 4 (R3 RenderState + SceneRenderer + layers) complete
 
 Completed Tasks:
 
 ---
 
 ## TASK 005 — Sprint 2: Rendering Architecture (In Progress)
+
+### Commit 4 — R3: RenderState + SceneRenderer + layers
+
+- Date: 2026-07-18
+- Summary: The main extraction step (§19 R3). `src/rendering/render-state.ts` defines the renderer's input contract (`RenderState` with the §4-fixed shape, `RenderCreature` as the §10 `Pick`, `RenderTime { animTime; frameDt }`, and the `RenderLayer` interface). `src/rendering/scene-renderer.ts` is the single public entry point: owns the 2D context, per-frame backing-store/DPR clamp/transform reset (moved verbatim from `drawScene`), the `Camera` (updated once per frame from `RenderState.worldY` before layers render, per §6 — ownership transferred from the component's ref), and the ordered layer list. The `drawScene` body redistributed verbatim into five layers — `layers/background.ts` (depth gradient), `environment.ts` (light rays incl. the `screen` composite save/restore, bubbles), `world.ts` (creatures → surface ship → sea floor, with culling), `actor.ts` (sway math moved as one unit per §20 risk 4; chain → anchor), `effects.ts` (ship-impact FX, clock-free) — statement order preserved exactly. The component's `drawScene` useCallback (with its `[bet]` stale-closure hazard) is deleted; the tick assembles `RenderState` from refs only and calls `resize()` + `frame()`. The ship's inline world position (−180) became `SHIP_WORLD_Y` in `src/game/constants.ts` (§8).
+- Files modified: `src/rendering/render-state.ts`, `src/rendering/scene-renderer.ts`, `src/rendering/layers/{background,environment,world,actor,effects}.ts` (new), `src/components/AbyssAnchor.tsx` (drawScene deleted; state assembly in tick), `src/game/constants.ts` (SHIP_WORLD_Y), `docs/05_RENDERING_ARCHITECTURE.md` (§18 corrections), `src/rendering/README.md`, tracking docs.
+- Architectural decisions: §18 corrected per the doc's own rule — layers import the geometry constants their moved code already referenced (until the engine extraction); `effects.ts` imports the pure `anchorSwayX`/`anchorPinY` helpers from `layers/actor.ts` (impact FX track the swaying anchor; Master-Rules no-duplication); `render-state.ts` hosts `RenderLayer`; `scene-renderer.ts` re-exports the contract types so the component imports only from it. Ship-impact FX already ride `shipImpact.elapsed` in state (forced by the fixed §4 contract + the renderer no-clock rule); the `performance.now()` bookkeeping stayed in the component, so R5 shrinks to the `SHIP_IMPACT_FX_SECONDS` draw-module import removal + frame-time meter (recorded in CURRENT_TASK.md). §7's depth-band generalization was deliberately NOT implemented — R3 is move-only; bands are a later approved change.
+- Verification: `tsc --noEmit` clean; production build clean; dev-server SSR smoke test HTTP 200 with canvas markup; lint 33 errors + 6 warnings vs 38+7 baseline — zero new findings (5 removed errors sat on deleted `drawScene` lines; 3 prettier findings in new files were caught and fixed pre-commit; the now-unused `eslint-disable react-hooks/exhaustive-deps` directive was removed, −1 warning). Draw order verified by statement-order mapping old `drawScene` → layer sequence (§5 canonical order).
+- Risks: camera update now happens before the Background/Environment layers instead of after the bubbles — no observable difference (neither layer queries the camera transform; viewport values are identical). `shipScreenY` is computed twice (World, Actor) from the same pure transform — identical result by construction. Manual gameplay pass + §21 screenshot checkpoints by the developer still required.
 
 ### Commit 3 — R2: Camera extracted
 

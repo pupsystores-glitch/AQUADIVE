@@ -52,7 +52,7 @@ Sprint 2 — Rendering Architecture
 
 Status:
 
-In Progress — Commits 1–2 (planning, R1) approved; Commit 3 (R2 camera extraction) done, awaiting approval
+In Progress — Commits 1–3 (planning, R1, R2) approved; Commit 4 (R3 RenderState + SceneRenderer + layers) done, awaiting approval
 
 ---
 

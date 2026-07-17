@@ -12,8 +12,11 @@ Progress:
 
 - Commit 1 — Architecture Planning (`docs/05_RENDERING_ARCHITECTURE.md`, documentation only): DONE, verified.
 - Commit 2 — R1: eight draw helpers moved verbatim into `src/rendering/draw/` + `theme.ts` color tokens: DONE, approved.
-- Commit 3 — R2: `src/rendering/camera.ts` replacing the inline `worldToScreen` closure and the 3 culling checks (§6 corrected for asymmetric margins): DONE, awaiting approval.
-- Next (needs approval): Commit R3 — `render-state.ts` + `scene-renderer.ts` + 5 layer files, per §19. Main extraction step; draw order must be preserved exactly.
+- Commit 3 — R2: `src/rendering/camera.ts` replacing the inline `worldToScreen` closure and the 3 culling checks (§6 corrected for asymmetric margins): DONE, approved.
+- Commit 4 — R3: `render-state.ts` (RenderState/RenderTime/RenderLayer contract) + `scene-renderer.ts` (public entry point owning ctx/DPR/camera/layer list) + 5 layer files (background → environment → world → actor → effects); `drawScene` deleted, component assembles `RenderState` from refs inside the tick and calls `frame()`; `SHIP_WORLD_Y` named per §8; §18 import corrections recorded: DONE, awaiting approval.
+- Next (needs approval): Commit R4 — `assets.ts` AssetManager; module-scope `ANCHOR_IMAGE` deleted; anchor draw takes a handle. Watch first-frame behavior.
+
+Note on R5 scope: R3 already routes ship-impact FX through `shipImpact.elapsed` in `RenderState` (required by the fixed §4 contract and the no-clock rule — the `performance.now()` bookkeeping stayed in the component/caller). R5 therefore reduces to: removing the `SHIP_IMPACT_FX_SECONDS` import from `draw/impact-fx.ts`/layers, plus the dev-only frame-time meter.
 
 Notes carried over from Sprint 1 (TASK 004):
 
