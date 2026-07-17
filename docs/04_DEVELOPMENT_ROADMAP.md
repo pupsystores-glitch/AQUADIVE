@@ -16,6 +16,16 @@ Never work ahead without approval.
 
 ---
 
+## Sprint Log
+
+Sprints are the execution units of this roadmap; each sprint delivers into one or more phases.
+
+- **Sprint 1 — Foundation Improvements (TASK 004): ✅ COMPLETED** (2026-07-17). Config/constants/types extraction, folder structure, shared utilities — feeds Phase 3. (Deferred: `sampleJackpot` move, scheduled as its own commit.)
+- **Sprint 2 — Rendering Architecture (TASK 005): ✅ COMPLETED** (2026-07-18). `docs/05_RENDERING_ARCHITECTURE.md` blueprint (Phase 2 rendering deliverable) + extraction commits R1–R5 — delivers Phase 4 in full and advances Phase 3.
+- **Sprint 3 — next: Phase 5 (Game Engine) per `docs/05_RENDERING_ARCHITECTURE.md` §19; requires close-out approval before starting.**
+
+---
+
 # PHASE 1 — PROJECT DISCOVERY
 
 Status: ✅ Completed
@@ -37,7 +47,7 @@ Project Audit Report.
 
 # PHASE 2 — SYSTEM ARCHITECTURE
 
-Status: 🔄 In Progress
+Status: 🔄 In Progress (Architecture Blueprint delivered in TASK 002; the rendering portion is persisted as `docs/05_RENDERING_ARCHITECTURE.md` — Sprint 2, Commit 1. Remaining portions, e.g. server protocol design, are persisted as their phases activate)
 
 Objectives
 
@@ -55,7 +65,7 @@ Complete Architecture Blueprint.
 
 # PHASE 3 — CORE REFACTOR
 
-Status: Pending
+Status: 🔄 In Progress (advanced by Sprints 1–2; the game component now holds simulation + UI only — the remaining split is the Phase 5 engine extraction)
 
 Objectives
 
@@ -72,7 +82,9 @@ Clean project structure.
 
 # PHASE 4 — RENDERING ENGINE
 
-Status: Pending
+Status: ✅ Completed (Sprint 2, TASK 005 — commits R1–R5, 2026-07-18)
+
+All objectives delivered per `docs/05_RENDERING_ARCHITECTURE.md`: SceneRenderer (scene manager), Camera, five-layer model, AssetManager, RenderState contract, theme boundary, dev frame-time meter.
 
 Objectives
 

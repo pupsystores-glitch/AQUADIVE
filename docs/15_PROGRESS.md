@@ -16,13 +16,36 @@ Rules:
 
 Current Status:
 
-Sprint 2 (Rendering Architecture, TASK 005) — Commits 1–5 approved; Commit 6 (R5 FX timing handoff + frame-time meter) complete. R1–R5 done: the rendering architecture is fully implemented
+Sprint 2 (Rendering Architecture, TASK 005) COMPLETED — close-out awaiting approval. No implementation task active; next: Sprint 3 (Phase 5, Game Engine) after approval
 
 Completed Tasks:
 
 ---
 
-## TASK 005 — Sprint 2: Rendering Architecture (In Progress)
+## TASK 005 — Sprint 2: Rendering Architecture (Completed 2026-07-18)
+
+### Sprint 2 Close-Out Summary
+
+Six commits over 2026-07-17 → 2026-07-18, each approved individually:
+
+1. Commit 1 — `docs/05_RENDERING_ARCHITECTURE.md` blueprint (21 sections, the binding contract).
+2. R1 — eight draw helpers → `draw/*.ts` + `theme.ts` color tokens (verbatim, literal-identical).
+3. R2 — `camera.ts` (anchor-locked transform + unified culling predicate).
+4. R3 — `render-state.ts` + `scene-renderer.ts` + five layers; `drawScene` deleted; component builds `RenderState` from refs.
+5. R4 — `assets.ts` AssetManager; module-scope sprite side effect removed.
+6. R5 — FX timing handoff completed; dev-only frame-time meter.
+
+Result: `src/rendering` matches §18's target structure exactly; `AbyssAnchor.tsx` (1,415 lines pre-Sprint-2) now holds simulation + UI only and calls one API: `SceneRenderer.frame(RenderState, RenderTime)`. Rendering is a pure `(state, time) → pixels` consumer — no money, no clocks (one sanctioned dev-meter exemption), no RNG below the Effects layer. Phase 4 of the roadmap is complete.
+
+### Sprint 2 Retrospective
+
+**Accomplished:** the entire §19 extraction plan (R1–R5) with zero behavior change across six commits — every commit typechecked, built, stayed at or below the lint baseline (47→33 errors over the sprint), and kept the game playable. The renderer is engine-ready (multiplayer snapshot rendering by construction) and PixiJS-portable at the documented boundary. Four spec-vs-reality gaps were resolved through the doc's own correction rule (§6 culling margins, §18 import allowances ×2, §4/§14/§20 meter clock exemption) — the document stayed authoritative the whole way.
+
+**Lessons learned:** (1) A fixed contract pulls work forward: §4's `RenderState` shape forced the FX-elapsed handoff into R3, shrinking R5 — extraction steps aren't perfectly separable, and recording the scope shift immediately (CURRENT_TASK note) kept later commits honest. (2) "Doc corrected first, in the same commit" scales well: cheap for import-allowance gaps, decisive for the real conflict (meter vs. no-clock rule). (3) Verbatim-move discipline plus a tracked lint baseline is an effective regression tripwire in a project with no test harness. (4) Validation that can't be automated yet (§21 screenshots, gameplay pass) must stay explicitly assigned to the developer per commit, or it silently becomes nobody's job.
+
+**Technical debt intentionally deferred (all recorded in the docs cited):** `sampleJackpot` still in the component (Sprint 1 Step 1.2, own commit); jackpot RTP economics flaw preserved on purpose (TASK 001, rebalance is a separate approved task); creature `switch` → registry (§10, later commit); §7 depth-band palette generalization not implemented (gradient kept verbatim); §14 "do when" optimizations untriggered (gradient caching, wreck pre-render, quality flag); `useSceneRenderer` hook (§17) not built — component owns renderer lifecycle inline until the engine driver exists; FX events ride `RenderState` until the Phase 5 event bus (§17); camera/layers import geometry constants from `src/game` until the engine extraction relocates them (§18 corrections); lint baseline debt (33 prettier errors + 6 warnings, incl. the unused `timeForMultiplier` import); no test harness (golden-image tests unlocked by the layer/state split, planned Phase 5+).
+
+**Sprint 3 readiness:** READY. The engine extraction has a stable output target (`RenderState`), a defined event channel (§17), and a component whose remaining code is exactly the extraction subject (simulation + UI). Risks to plan around: simulation is still interleaved with React state/timers (`setTimeout` phase transitions, `useState`/ref mirrors); money math is float-based (integer minor-units migration is roadmapped); no characterization tests exist — recommend Sprint 3 start with the planning commit plus characterization tests pinning current behavior (including the known economics bug) before moving code.
 
 ### Commit 6 — R5: FX timing handoff + frame-time meter
 

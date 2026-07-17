@@ -2,7 +2,7 @@
 
 Status:
 
-Sprint 2 — Rendering Architecture (TASK 005) — In Progress
+No task active — Sprint 2 (TASK 005) completed; close-out awaiting approval. Next: Sprint 3 (Phase 5, Game Engine) after approval
 
 ---
 
@@ -52,7 +52,7 @@ Sprint 2 — Rendering Architecture
 
 Status:
 
-In Progress — Commits 1–5 (planning, R1–R4) approved; Commit 6 (R5 FX timing handoff + frame-time meter) done, awaiting approval. R1–R5 complete: rendering architecture fully implemented
+Completed (2026-07-18) — Commits 1–6 delivered (planning + R1–R5); rendering architecture fully implemented; Phase 4 complete. Close-out recorded in PROGRESS.md, awaiting approval
 
 ---
 
