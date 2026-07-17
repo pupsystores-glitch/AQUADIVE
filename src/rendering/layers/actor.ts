@@ -11,6 +11,7 @@
 
 import { ANCHOR_DRAW_H, ANCHOR_RING_Y_FRAC } from "@/game/config";
 import { ANCHOR_SCREEN_Y_FRAC, SHIP_WORLD_Y } from "@/game/constants";
+import { assets } from "../assets";
 import { drawAnchor } from "../draw/anchor";
 import { drawChain } from "../draw/chain";
 import type { RenderLayer } from "../render-state";
@@ -48,6 +49,15 @@ export const actorLayer: RenderLayer = {
     drawChain(ctx, w / 2, chainStartY, anchorRingX, anchorRingY - ringR, time.animTime);
 
     // Anchor sprite (in front of shipwreck so it lands ON the ship)
-    drawAnchor(ctx, anchorX, anchorScreenY, swayAngle, state.crashed, state.boost, drawH);
+    drawAnchor(
+      ctx,
+      anchorX,
+      anchorScreenY,
+      swayAngle,
+      state.crashed,
+      state.boost,
+      drawH,
+      assets.get("anchor"),
+    );
   },
 };

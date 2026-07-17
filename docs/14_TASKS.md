@@ -52,7 +52,7 @@ Sprint 2 — Rendering Architecture
 
 Status:
 
-In Progress — Commits 1–3 (planning, R1, R2) approved; Commit 4 (R3 RenderState + SceneRenderer + layers) done, awaiting approval
+In Progress — Commits 1–4 (planning, R1, R2, R3) approved; Commit 5 (R4 AssetManager) done, awaiting approval
 
 ---
 

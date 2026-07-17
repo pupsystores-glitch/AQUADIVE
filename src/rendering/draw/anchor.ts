@@ -2,16 +2,13 @@
 // (Sprint 2, Commit R1). Colors reference theme tokens with byte-identical
 // values; geometry and animation math are unchanged.
 //
-// The module-scope preloaded sprite moves here with the function; it is
-// replaced by the AssetManager in Commit R4
-// (docs/05_RENDERING_ARCHITECTURE.md §19).
+// Since Commit R4 the sprite arrives as an AssetManager handle
+// (docs/05_RENDERING_ARCHITECTURE.md §9, §15): the blit happens only when
+// the handle reports ready, preserving the previous "draw nothing until
+// loaded" behavior.
 
-import anchorImgSrc from "@/assets/anchor.png";
+import type { AssetHandle } from "../assets";
 import { ANCHOR_THEME } from "../theme";
-
-// Preloaded anchor sprite — shared across mounts.
-const ANCHOR_IMAGE: HTMLImageElement | null = typeof window !== "undefined" ? new Image() : null;
-if (ANCHOR_IMAGE) ANCHOR_IMAGE.src = anchorImgSrc;
 
 export function drawAnchor(
   ctx: CanvasRenderingContext2D,
@@ -21,6 +18,7 @@ export function drawAnchor(
   crashed: boolean,
   boost: number,
   drawH: number,
+  anchor: AssetHandle,
 ) {
   ctx.save();
   ctx.translate(cx, cy);
@@ -41,8 +39,8 @@ export function drawAnchor(
     ctx.shadowBlur = 28 * boost;
   }
 
-  const img = ANCHOR_IMAGE;
-  if (img && img.complete && img.naturalWidth > 0) {
+  const img = anchor.ready ? anchor.image : null;
+  if (img) {
     const aspect = img.naturalWidth / img.naturalHeight;
     const drawW = drawH * aspect;
     ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);

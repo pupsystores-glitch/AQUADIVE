@@ -26,5 +26,8 @@ R3: `render-state.ts` (RenderState/RenderTime/RenderLayer contract),
 ordered layer list, `frame()`), and the five `layers/` modules
 (background → environment → world → actor → effects; array order is
 z-order).
+R4: `assets.ts` (AssetManager: manifest + eager preload + ready-gated
+handles; the anchor sprite's module-scope `new Image()` is gone —
+no asset URLs or Image side effects outside `assets.ts`).
 
-Pending — R4: `assets.ts`; R5: FX timing handoff + frame-time meter.
+Pending — R5: FX timing handoff + frame-time meter.

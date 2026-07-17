@@ -16,13 +16,22 @@ Rules:
 
 Current Status:
 
-Sprint 2 (Rendering Architecture, TASK 005) in progress — Commits 1–3 approved; Commit 4 (R3 RenderState + SceneRenderer + layers) complete
+Sprint 2 (Rendering Architecture, TASK 005) in progress — Commits 1–4 approved; Commit 5 (R4 AssetManager) complete
 
 Completed Tasks:
 
 ---
 
 ## TASK 005 — Sprint 2: Rendering Architecture (In Progress)
+
+### Commit 5 — R4: AssetManager
+
+- Date: 2026-07-18
+- Summary: `src/rendering/assets.ts` created per §15: `AssetHandle { image, ready }`, `AssetManager` with `preload(manifest) → Promise<void>` and `get(key)` (key typed to the manifest, so unknown keys are compile errors), a one-entry V1 manifest (`anchor` → `src/assets/anchor.png`), and eager preload at module init — matching the previous module-scope load, so first-frame behavior is unchanged. `handle.ready` is a getter reproducing the pre-R4 blit predicate exactly (`image.complete && image.naturalWidth > 0`), which also covers the failure policy: a failed load logs once (onerror) and leaves `ready = false` forever; no retries; game keeps running on vector art. The module-scope `ANCHOR_IMAGE` and the `anchor.png` import were deleted from `draw/anchor.ts`; `drawAnchor` now takes an `AssetHandle` as its final parameter (type-only import) and blits only when ready; the Actor layer passes `assets.get("anchor")`. SSR-safe: on the server the handle's image is null and `ready` stays false (previous `typeof window` guard semantics preserved).
+- Files modified: `src/rendering/assets.ts` (new), `src/rendering/draw/anchor.ts` (sprite side effect removed; handle parameter), `src/rendering/layers/actor.ts` (import + call site), `src/rendering/README.md`, tracking docs.
+- Architectural decisions: none new — §15 implemented as specified; no §18 corrections needed (draw modules and layers were already permitted to import `assets.ts`). `ready` as a live getter (rather than an onload-set flag) was chosen precisely to keep the blit-start frame byte-identical to the old per-frame `complete` poll.
+- Verification: `tsc --noEmit` clean; production build clean with the anchor sprite emitted (`anchor-*.png` in `.output/public/assets`); dev-server SSR smoke test HTTP 200 with canvas markup (exercises the module-init SSR path); lint exactly at the 33 errors + 6 warnings baseline — zero findings in rendering files.
+- Risks: first-frame behavior was the flagged §20 risk — mitigated by eager module-init preload plus the getter-based ready predicate; load-start timing is unchanged (assets.ts initializes on the same import chain that previously initialized draw/anchor.ts). Manual gameplay pass by the developer still required (docs/18_GIT_WORKFLOW.md step 2).
 
 ### Commit 4 — R3: RenderState + SceneRenderer + layers
 
