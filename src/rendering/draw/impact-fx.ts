@@ -2,10 +2,11 @@
 // component (Sprint 2, Commit R1). Colors reference theme tokens with
 // byte-identical values; geometry, RNG jitter and animation math are
 // unchanged. Per docs/05_RENDERING_ARCHITECTURE.md §12 this module is
-// exempt from the no-RNG rule; the SHIP_IMPACT_FX_SECONDS import is
-// removed by the Commit R5 timing handoff.
+// exempt from the no-RNG rule. Since the Commit R5 timing handoff the
+// module holds no timing knowledge: `dt` (elapsed seconds) and `life`
+// (0..1 of the FX lifetime) both arrive as parameters — the lifetime
+// constant lives with the Effects layer (§12 timing contract).
 
-import { SHIP_IMPACT_FX_SECONDS } from "@/game/constants";
 import { IMPACT_FX_THEME } from "../theme";
 
 export function drawShipImpact(
@@ -15,8 +16,8 @@ export function drawShipImpact(
   w: number,
   h: number,
   dt: number,
+  life: number,
 ) {
-  const life = Math.min(1, dt / SHIP_IMPACT_FX_SECONDS);
   const alpha = 1 - life;
   ctx.save();
 

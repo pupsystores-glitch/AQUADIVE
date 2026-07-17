@@ -23,6 +23,13 @@ import type { RenderLayer, RenderState, RenderTime } from "./render-state";
 // are re-exported here so callers never reach into src/rendering internals.
 export type { RenderCreature, RenderState, RenderTime } from "./render-state";
 
+// Dev-only frame-time meter (§14 item 8, landed in R5). The wall-clock read
+// below is the single sanctioned exemption from the §4 no-clock rule
+// (correction recorded during R5): it measures the renderer's own cost,
+// never feeds any render path, and is dead code in production builds.
+const METER_WINDOW = 120; // frames in the rolling window
+const METER_LOG_EVERY = 300; // log cadence in frames (~5 s at 60 FPS)
+
 export class SceneRenderer {
   private canvas: HTMLCanvasElement | null;
   private ctx: CanvasRenderingContext2D | null;
@@ -30,6 +37,8 @@ export class SceneRenderer {
   private height = 0;
   private dpr = 1;
   private readonly camera = new Camera();
+  private readonly frameMs = new Float64Array(METER_WINDOW);
+  private frameCount = 0;
 
   // Canonical layer order, bottom → top (§5).
   private readonly layers: readonly RenderLayer[] = [
@@ -57,6 +66,7 @@ export class SceneRenderer {
     const canvas = this.canvas;
     const ctx = this.ctx;
     if (!canvas || !ctx) return;
+    const meterStart = import.meta.env.DEV ? performance.now() : 0;
     const { width: w, height: h, dpr } = this;
     if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
       canvas.width = w * dpr;
@@ -73,6 +83,22 @@ export class SceneRenderer {
     for (const layer of this.layers) {
       layer.render(ctx, state, this.camera, time);
     }
+
+    if (import.meta.env.DEV) this.recordFrameTime(performance.now() - meterStart);
+  }
+
+  /** Dev-only: rolling avg + p95 of frame() cost, logged every METER_LOG_EVERY frames. */
+  private recordFrameTime(ms: number) {
+    this.frameMs[this.frameCount % METER_WINDOW] = ms;
+    this.frameCount++;
+    if (this.frameCount % METER_LOG_EVERY !== 0) return;
+    const n = Math.min(this.frameCount, METER_WINDOW);
+    const sorted = Array.from(this.frameMs.subarray(0, n)).sort((a, b) => a - b);
+    const avg = sorted.reduce((sum, v) => sum + v, 0) / n;
+    const p95 = sorted[Math.min(n - 1, Math.floor(n * 0.95))];
+    console.debug(
+      `[rendering] frame ${avg.toFixed(2)} ms avg / ${p95.toFixed(2)} ms p95 (${n}-frame window)`,
+    );
   }
 
   /** Release the canvas/context references. */

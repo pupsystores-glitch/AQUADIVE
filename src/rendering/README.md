@@ -29,5 +29,13 @@ z-order).
 R4: `assets.ts` (AssetManager: manifest + eager preload + ready-gated
 handles; the anchor sprite's module-scope `new Image()` is gone —
 no asset URLs or Image side effects outside `assets.ts`).
+R5: FX timing handoff completed (`draw/impact-fx.ts` holds no timing
+knowledge — `dt` and `life` arrive as parameters; the lifetime constant
+lives with the Effects layer) + dev-only frame-time meter in
+`scene-renderer.ts` (rolling avg + p95, console-logged; the sole
+sanctioned wall-clock read under `src/rendering`, dead code in prod).
 
-Pending — R5: FX timing handoff + frame-time meter.
+R1–R5 complete — the rendering architecture of
+`docs/05_RENDERING_ARCHITECTURE.md` is fully implemented. The game
+component now contains simulation + UI only; Phase 5 (engine extraction)
+can proceed against this stable rendering API.

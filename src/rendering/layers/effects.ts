@@ -20,8 +20,9 @@ export const effectsLayer: RenderLayer = {
     if (state.shipImpact === null) return;
     const { elapsed } = state.shipImpact;
     if (elapsed >= SHIP_IMPACT_FX_SECONDS) return;
+    const life = Math.min(1, elapsed / SHIP_IMPACT_FX_SECONDS);
     const { w, h } = camera.viewport;
     const anchorX = anchorSwayX(time.animTime, w);
-    drawShipImpact(ctx, anchorX, anchorPinY(h) + ANCHOR_DRAW_H * 0.3, w, h, elapsed);
+    drawShipImpact(ctx, anchorX, anchorPinY(h) + ANCHOR_DRAW_H * 0.3, w, h, elapsed, life);
   },
 };

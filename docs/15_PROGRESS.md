@@ -16,13 +16,22 @@ Rules:
 
 Current Status:
 
-Sprint 2 (Rendering Architecture, TASK 005) in progress — Commits 1–4 approved; Commit 5 (R4 AssetManager) complete
+Sprint 2 (Rendering Architecture, TASK 005) — Commits 1–5 approved; Commit 6 (R5 FX timing handoff + frame-time meter) complete. R1–R5 done: the rendering architecture is fully implemented
 
 Completed Tasks:
 
 ---
 
 ## TASK 005 — Sprint 2: Rendering Architecture (In Progress)
+
+### Commit 6 — R5: FX timing handoff + frame-time meter
+
+- Date: 2026-07-18
+- Summary: The final extraction step (§19 R5). (1) FX timing handoff completed: `draw/impact-fx.ts` no longer imports `SHIP_IMPACT_FX_SECONDS` — the `life = min(1, dt / SHIP_IMPACT_FX_SECONDS)` line moved to the Effects layer (which owns the lifetime per §12's timing contract) and `drawShipImpact` takes `life` as a parameter alongside `dt` (`dt` is still needed raw for bolt rotation). Identical math, identical values; the draw module now holds zero timing knowledge. The `performance.now()` bookkeeping had already moved to the caller in R3 (forced by the fixed §4 contract), as recorded then. (2) Dev-only frame-time meter added to `scene-renderer.ts` (§14 item 8): 120-frame rolling window (fixed `Float64Array` ring — zero steady-state allocation), avg + p95 logged via `console.debug` every 300 frames (~5 s), gated by `import.meta.env.DEV`. Verified compiled out of the production bundle (both call sites eliminated; `import.meta.env` occurs 0 times in output).
+- Files modified: `src/rendering/draw/impact-fx.ts`, `src/rendering/layers/effects.ts`, `src/rendering/scene-renderer.ts`, `docs/05_RENDERING_ARCHITECTURE.md` (§4/§14/§20 corrections), `src/rendering/README.md`, tracking docs.
+- Architectural decisions: conflict discovered and resolved per the doc's own rule — §14.8/§17 place the frame-time meter inside SceneRenderer, but the §4 hard rule and §20 grep rule banned `performance.now()` under `src/rendering/`, and §14.8's "debug layer" option would break §13's no-canvas-text law. Correction recorded (mirroring §12's RNG exemption): the dev-only meter in `scene-renderer.ts` is the single sanctioned wall-clock read — instrumentation only, never feeds a render path, dead code in production. Meter output is log-only; no public stats getter was added (nothing would consume it yet — no dead API).
+- Verification: `tsc --noEmit` clean; production build clean; prod bundle inspected — `frame()` ends at the layer loop, meter calls eliminated; grep rule holds (only the two sanctioned meter lines under `src/rendering/`); lint exactly at the 33 errors + 6 warnings baseline; dev-server SSR smoke test HTTP 200 with canvas markup. §21.5's frame-time number: this commit *introduces* the meter, so it establishes the baseline — the dev-machine reading lands with the developer's manual pass and applies from the next rendering commit onward.
+- Risks: none new — parameter-passing refactor with identical arithmetic; meter is dev-only and render-inert. Manual gameplay pass by the developer still required (docs/18_GIT_WORKFLOW.md step 2). With R5, `AbyssAnchor.tsx` contains simulation + UI only and Phase 5 (engine extraction) can proceed against the stable rendering API.
 
 ### Commit 5 — R4: AssetManager
 

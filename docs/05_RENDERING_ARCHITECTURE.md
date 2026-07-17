@@ -111,7 +111,7 @@ interface RenderLayer {
 - No layer imports from `src/engine` internals, `src/lib/abyss-game.ts` economics, or React.
 - No layer mutates `state`. TypeScript `Readonly<>` types on `RenderState`.
 - No `Math.random()` outside the Effects layer (§12).
-- No `performance.now()` / `Date.now()` anywhere in rendering — time arrives as a parameter (`RenderTime { animTime; frameDt }`).
+- No `performance.now()` / `Date.now()` anywhere in rendering — time arrives as a parameter (`RenderTime { animTime; frameDt }`). (Correction recorded during R5, mirroring §12's RNG exemption: the dev-only frame-time meter inside `scene-renderer.ts` is the single sanctioned exemption — it reads `performance.now()` strictly to measure the renderer's own frame cost, never feeds a value into any layer or draw path, and is dead code in production builds behind `import.meta.env.DEV`.)
 - No money, bets, balances or multiplier *values* in the renderer. (The multiplier is displayed by the DOM HUD, §13.)
 
 **RenderState** (the contract; exact fields finalized in the first extraction commit, shape fixed here):
@@ -252,7 +252,7 @@ Ordered by leverage, with explicit "do when" triggers so future commits don't gu
 5. **Static-scene pre-render**: the shipwreck + treasure tableau is static per session → render once to an offscreen canvas at first visibility, then blit. *Do when* floor-visible frames measurably exceed budget; the World layer's structure (one `drawSeaFloor` call site) makes this a local change.
 6. **DPR cap stays at 2** (`MAX_DPR`) — retina-3 backing stores triple fill cost for imperceptible gain at these art styles.
 7. **No shadows/filters in hot paths**: `shadowBlur` is Canvas 2D's slowest feature; today it appears only on boost-glow and FX (short-lived) — acceptable. New steady-state uses are forbidden; bake glows into sprites instead.
-8. **Instrumentation before optimization**: a dev-only frame-time meter (rolling avg + p95, drawn by a debug layer or logged) lands with the SceneRenderer so every later claim in this section is measurable.
+8. **Instrumentation before optimization**: a dev-only frame-time meter (rolling avg + p95, drawn by a debug layer or logged) lands with the SceneRenderer so every later claim in this section is measurable. (R5 correction: implemented as periodic console logging inside `scene-renderer.ts` — the "debug layer" option would break §13's no-canvas-text law; the wall-clock read is sanctioned by the §4 exemption.)
 9. **Degradation ladder** (future, mobile): reduce bubble count → drop light rays → halve FX particle counts. Encoded as a `quality: "high" | "low"` flag on `SceneRenderer` — reserved in the API now, implemented when a real device needs it.
 
 ## 15. Asset Management Strategy
@@ -337,7 +337,7 @@ Corresponds to approved plan Steps 2.1 (R1), 2.2 (R2+R3), 2.3 (R4); R5 closes th
 ## 20. Risks
 
 1. **Silent visual regressions** — the #1 risk. Verbatim moves can still break via changed call order, lost `save/restore` pairing, or composite-mode leaks (`screen` mode in rays, `shadowBlur` in boost/FX are the sharp edges). Mitigation: §21 screenshot protocol + preserve exact statement order within layers.
-2. **Time-source confusion.** `animTime` (accumulated, clamped) vs. wall-clock FX timing differ subtly; mixing them shifts sway/FX speeds. Mitigation: `RenderTime` carries only the accumulated clock; FX elapsed arrives precomputed in state (R5); grep-level review rule: no `performance.now()` under `src/rendering/`.
+2. **Time-source confusion.** `animTime` (accumulated, clamped) vs. wall-clock FX timing differ subtly; mixing them shifts sway/FX speeds. Mitigation: `RenderTime` carries only the accumulated clock; FX elapsed arrives precomputed in state (R5); grep-level review rule: no `performance.now()` under `src/rendering/` (single exemption: the dev-only frame-time meter in `scene-renderer.ts`, per the §4/§14 correction recorded during R5).
 3. **React re-render interactions.** `drawScene` today closes over `bet` (a stale-closure hazard the refactor *removes*, but during R3 the half-migrated state assembly can accidentally capture stale refs). Mitigation: assemble `RenderState` inside the tick callback from refs only, never from render-scope variables.
 4. **Sway math relocation** (R3) moves anchor X/angle computation; the chain endpoint depends on it via ring trig. Mitigation: move the whole block as one unit into the Actor layer; snapshot-compare at multiple `animTime` values.
 5. **Performance regression from indirection** (layer dispatch, state assembly per frame). Realistically negligible (5 virtual calls/frame), but the R5 frame-time meter turns this from belief into measurement.

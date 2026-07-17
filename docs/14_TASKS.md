@@ -52,7 +52,7 @@ Sprint 2 — Rendering Architecture
 
 Status:
 
-In Progress — Commits 1–4 (planning, R1, R2, R3) approved; Commit 5 (R4 AssetManager) done, awaiting approval
+In Progress — Commits 1–5 (planning, R1–R4) approved; Commit 6 (R5 FX timing handoff + frame-time meter) done, awaiting approval. R1–R5 complete: rendering architecture fully implemented
 
 ---
 
