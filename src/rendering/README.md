@@ -20,6 +20,7 @@ FX), and asset loading (sprites, future atlases).
 
 Done — R1: `theme.ts` (color tokens) and `draw/` modules (ship, chain,
 anchor, creatures, sea floor + treasure, impact FX), moved verbatim.
+R2: `camera.ts` (anchor-locked world→screen transform + culling predicate).
 
-Pending — R2: `camera.ts`; R3: `render-state.ts`, `scene-renderer.ts`,
+Pending — R3: `render-state.ts`, `scene-renderer.ts`,
 `layers/`; R4: `assets.ts`; R5: FX timing handoff.

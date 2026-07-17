@@ -52,7 +52,7 @@ Sprint 2 — Rendering Architecture
 
 Status:
 
-In Progress — Commit 1 (Architecture Planning) verified; Commit 2 (R1 draw-module extraction) done, awaiting approval
+In Progress — Commits 1–2 (planning, R1) approved; Commit 3 (R2 camera extraction) done, awaiting approval
 
 ---
 

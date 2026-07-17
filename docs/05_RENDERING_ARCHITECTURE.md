@@ -157,19 +157,20 @@ DOM HUD sits above all canvas layers (§13).
 
 ```ts
 class Camera {
-  // authoritative state
+  // authoritative state (owner-only writes)
   follow(worldY: number): void;          // anchor-locked follow (today's behavior)
+  setViewport(w: number, h: number): void;   // owner updates on resize/frame
   // queries used by layers
   worldToScreenY(worldY: number): number;
-  isVisibleY(worldY: number, margin: number): boolean;   // culling helper
+  isVisibleY(worldY: number, marginTop: number, marginBottom?: number): boolean;   // culling helper
   readonly viewport: { w: number; h: number };
 }
 ```
 
 - **V1 must reproduce the current transform bit-for-bit**: `screenY = h * ANCHOR_SCREEN_Y_FRAC + (worldY − (followY + ANCHOR_WORLD_OFFSET_PX))`. X is untransformed (creatures position by `x * w`); the camera is vertical-only by design and stays that way until a feature demands otherwise.
-- Culling moves from ad-hoc `sy < -120 || sy > h + 120` checks to `camera.isVisibleY(wy, margin)` — same math, one place.
+- Culling: the three ad-hoc screen-Y checks move into `camera.isVisibleY(worldY, marginTop, marginBottom = marginTop)`. Correction recorded during R2 (the original sketch assumed one symmetric margin): the existing checks differ — creatures ±120 (inclusive visibility), ship −120 top / +80 bottom (exclusive), sea floor bottom-only +100 (exclusive) — so the helper takes independent top/bottom margins (`Infinity` disables the top bound) and uses inclusive comparisons. At exact floating-point boundary equality the ship and floor checks become inclusive where they were exclusive; unobservable in practice, accepted as the price of one shared predicate.
 - **Extension points (interfaces reserved now, implemented never/later):** `shake(amplitude, duration)` for crash impact, `zoom` for jackpot punch-in, smoothed follow (lerp toward target) for ship-impact landing. Each is additive offset/scale applied inside `worldToScreenY` — no layer code changes when they arrive.
-- The camera is owned by `SceneRenderer` and updated once per frame from `RenderState.worldY` *before* layers render. Layers never write to it.
+- The camera is owned by `SceneRenderer` and updated once per frame from `RenderState.worldY` *before* layers render. Layers never write to it. (Transitional, R2→R3: until `SceneRenderer` exists, the game component owns the instance and calls `setViewport`/`follow` at the top of its draw pass; `camera.ts` imports its two constants from `src/game/constants` — both noted per §18's correction convention.)
 
 ## 7. Ocean Layers
 

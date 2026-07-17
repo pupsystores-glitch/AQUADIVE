@@ -51,6 +51,7 @@ import {
   SPAWN_JITTER_PX,
 } from "@/game/constants";
 import type { HistoryEntry, LastWin, RunState } from "@/game/types";
+import { Camera } from "@/rendering/camera";
 import { drawAnchor } from "@/rendering/draw/anchor";
 import { drawChain } from "@/rendering/draw/chain";
 import { drawCreature } from "@/rendering/draw/creatures";
@@ -62,6 +63,7 @@ import { lerpColor } from "@/shared/utils/color";
 export default function AbyssAnchor() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  const cameraRef = useRef<Camera | null>(null);
 
   const [balance, setBalance] = useState(DEFAULT_BALANCE);
   const [bet, setBet] = useState(DEFAULT_BET);
@@ -382,26 +384,29 @@ export default function AbyssAnchor() {
     }
 
     // World camera: anchor is fixed near 55% of screen.
+    if (cameraRef.current === null) cameraRef.current = new Camera();
+    const camera = cameraRef.current;
+    camera.setViewport(w, h);
+    camera.follow(worldY);
     const anchorScreenY = h * ANCHOR_SCREEN_Y_FRAC;
-    const worldToScreen = (wy: number) => anchorScreenY + (wy - (worldY + ANCHOR_WORLD_OFFSET_PX));
 
     // Draw creatures (behind anchor)
     for (const c of creaturesRef.current) {
-      const sy = worldToScreen(c.worldY);
-      if (sy < -120 || sy > h + 120) continue;
+      if (!camera.isVisibleY(c.worldY, 120)) continue;
+      const sy = camera.worldToScreenY(c.worldY);
       const sx = c.x * w + Math.sin(swayRef.current * 0.6 + c.phase) * 12 * c.dir;
       drawCreature(ctx, c.kind, sx, sy, c.size, swayRef.current + c.phase, c.consumed === true);
     }
 
     // Surface ship (only visible near surface)
-    const shipScreenY = worldToScreen(-180);
-    if (shipScreenY > -120 && shipScreenY < h + 80) {
+    const shipScreenY = camera.worldToScreenY(-180);
+    if (camera.isVisibleY(-180, 120, 80)) {
       drawShip(ctx, w / 2, shipScreenY, swayRef.current);
     }
 
     // Sea floor + shipwreck — drawn BEFORE the anchor so the anchor visibly lands on top.
-    const floorScreenY = worldToScreen(CHAIN_MAX_DEPTH + ANCHOR_WORLD_OFFSET_PX);
-    if (floorScreenY < h + 100) {
+    const floorScreenY = camera.worldToScreenY(CHAIN_MAX_DEPTH + ANCHOR_WORLD_OFFSET_PX);
+    if (camera.isVisibleY(CHAIN_MAX_DEPTH + ANCHOR_WORLD_OFFSET_PX, Infinity, 100)) {
       drawSeaFloor(ctx, w, h, floorScreenY);
     }
 

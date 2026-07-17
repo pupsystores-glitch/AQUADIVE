@@ -16,13 +16,22 @@ Rules:
 
 Current Status:
 
-Sprint 2 (Rendering Architecture, TASK 005) in progress — Commit 1 (planning document) complete
+Sprint 2 (Rendering Architecture, TASK 005) in progress — Commits 1–2 approved; Commit 3 (R2 camera) complete
 
 Completed Tasks:
 
 ---
 
 ## TASK 005 — Sprint 2: Rendering Architecture (In Progress)
+
+### Commit 3 — R2: Camera extracted
+
+- Date: 2026-07-18
+- Summary: `src/rendering/camera.ts` created (per §6/§19): vertical-only, anchor-locked `Camera` class with `follow`, `setViewport`, `worldToScreenY`, `isVisibleY`, `viewport`. The component's inline `worldToScreen` closure is deleted; the transform formula moved with its exact floating-point expression order preserved (`h * ANCHOR_SCREEN_Y_FRAC + (worldY − (followY + ANCHOR_WORLD_OFFSET_PX))`). The three ad-hoc culling checks (creatures, ship, sea floor) now go through `camera.isVisibleY`.
+- Files modified: `src/rendering/camera.ts` (new), `src/components/AbyssAnchor.tsx` (camera ref + 3 call sites), `docs/05_RENDERING_ARCHITECTURE.md` (§6 correction), `src/rendering/README.md`, tracking docs.
+- Architectural decisions: §6 corrected per the doc's own conflict rule — the three real culling checks have different margins (creatures ±120 inclusive; ship −120/+80 exclusive; floor bottom-only +100 exclusive), so `isVisibleY` takes independent `marginTop`/`marginBottom` (default symmetric; `Infinity` disables the top bound) with inclusive comparisons. `setViewport` added as owner-side API. Component owns the `Camera` instance (lazy-init ref) until R3's SceneRenderer takes ownership.
+- Verification: `tsc --noEmit` clean; production build clean; full lint back at baseline (38 errors + 7 warnings, zero new findings — one new prettier finding in camera.ts was caught and formatted before commit).
+- Risks: at exact floating-point boundary equality the ship/floor culls became inclusive where they were exclusive — a measure-zero, visually unobservable unification recorded in §6. Manual gameplay pass by the developer still required (docs/18_GIT_WORKFLOW.md step 2).
 
 ### Commit 2 — R1: Pure draw modules extracted
 
