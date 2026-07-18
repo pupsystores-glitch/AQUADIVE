@@ -1,37 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BETTING_WINDOW_SECONDS,
-  ENGINE_STATE_TO_PHASE,
+  EngineDriver,
   GameEngine,
   LocalRoundAuthority,
-  MAX_TICK_SECONDS,
   createMathRandomRng,
   type BonusChest,
   type RoundAuthority,
 } from "@/engine";
 import { CASH_FLASH_MS, HISTORY_LIMIT, JACKPOT_FLASH_MS, QUICK_BETS } from "@/game/config";
-import { COUNTDOWN_TICK_MS, DEFAULT_BALANCE, DEFAULT_BET } from "@/game/constants";
+import { DEFAULT_BALANCE, DEFAULT_BET } from "@/game/constants";
 import { chainTier, formatMultiplier } from "@/game/presentation";
 import type { HistoryEntry, LastWin } from "@/game/types";
-import {
-  SHIP_IMPACT_FX_SECONDS,
-  SceneRenderer,
-  type Phase,
-  type RenderState,
-} from "@/rendering/scene-renderer";
-import { CHAIN_MAX_DEPTH } from "@/shared/world";
+import { SceneRenderer, type Phase } from "@/rendering/scene-renderer";
 
-// The two engine RNG streams (docs/06_ENGINE_ARCHITECTURE.md §11, §16):
-// outcome draws go through the RoundAuthority; world draws (creature rolls,
-// spawn jitter) through the `world` Rng stream injected into the engine.
+// The game session (docs/06_ENGINE_ARCHITECTURE.md §13): the driver+engine
+// pair is owned at module scope, not per component mount — remounting the
+// component resumes the world instead of restarting it. The two engine RNG
+// streams (§11, §16): outcome draws go through the RoundAuthority; world
+// draws (creature rolls, spawn jitter) through the injected `world` stream.
 const worldRng = createMathRandomRng();
 const roundAuthority: RoundAuthority = new LocalRoundAuthority(createMathRandomRng());
+const engine = new GameEngine({ authority: roundAuthority, worldRng });
+const driver = new EngineDriver(engine);
 
+// The UI shell (E6): rendering, user input, and event subscriptions only.
+// The simulation, round lifecycle and all projections live in the engine;
+// this component mirrors engine public state per frame (delta D5), settles
+// money at the event edge (§3 — the engine never sees the wallet), and
+// submits typed commands (§13).
 export default function AbyssAnchor() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const rafRef = useRef<number | null>(null);
-  const rendererRef = useRef<SceneRenderer | null>(null);
-  const engineRef = useRef<GameEngine | null>(null);
 
   const [balance, setBalance] = useState(DEFAULT_BALANCE);
   const [bet, setBet] = useState(DEFAULT_BET);
@@ -47,64 +46,34 @@ export default function AbyssAnchor() {
   const [participating, setParticipating] = useState(false);
   const [countdown, setCountdown] = useState(BETTING_WINDOW_SECONDS);
 
-  const roundBetRef = useRef(0); // this round's locked bet (0 when spectating) — settlement-side (§3)
-  const phaseRef = useRef<Phase>("idle");
-  const lastTsRef = useRef<number | null>(null);
+  // Settlement-side bookkeeping (§3): the round's locked bet (0 when
+  // spectating), the jackpot base for chest delta credits, and the
+  // cashed-out flag the settlement listeners read synchronously.
+  const roundBetRef = useRef(0);
   const hasCashedRef = useRef(false);
   const participatingRef = useRef(false);
   const betRef = useRef(DEFAULT_BET);
-  const shipImpactRef = useRef<number | null>(null); // performance.now() when anchor hit ship
-  const jackpotMultRef = useRef(1); // multiplier locked at ship impact, used for chest math
+  const jackpotMultRef = useRef(1);
 
-  useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { participatingRef.current = participating; }, [participating]);
   useEffect(() => { betRef.current = bet; }, [bet]);
 
-  // ----- place a bet during the betting window -----
-  // A queued engine command since E5 (docs/06 §13, delta D4). The engine
-  // validates against round state (phase, one bet per round); whether the
-  // player can afford the bet is a wallet question answered here, before
-  // the command is submitted (§3). The debit rides the betPlaced event.
+  // ----- user input → engine commands (§13) -----
+  // The engine validates every command against round state at the tick it
+  // applies (D4) and rejects invalid ones; the only check that belongs
+  // here is the wallet question (§3): can the player afford the bet?
   const placeBet = useCallback(() => {
-    if (phaseRef.current !== "idle") return;
-    if (participatingRef.current) return;
     const b = betRef.current;
     if (b <= 0 || b > balance) return;
-    engineRef.current?.submit({ type: "placeBet", amount: b });
+    engine.submit({ type: "placeBet", amount: b });
   }, [balance]);
 
-  // ----- betting countdown display (100 ms UI refresh) -----
-  // The betting→diving transition is engine-owned since E4: the machine's
-  // countdown runs on the simulation clock (delta D1) and starting the dive
-  // is its transition, not this interval's. This interval only mirrors
-  // engine state into the HUD; delta D5 (E6) deletes it in favor of
-  // per-frame state reads.
-  useEffect(() => {
-    if (phase !== "idle") return;
-    setCountdown(engineRef.current?.countdown ?? BETTING_WINDOW_SECONDS);
-    const iv = window.setInterval(() => {
-      setCountdown(engineRef.current?.countdown ?? BETTING_WINDOW_SECONDS);
-    }, COUNTDOWN_TICK_MS);
-    return () => window.clearInterval(iv);
-  }, [phase]);
-
-  // ----- cashout (money is locked in, but anchor keeps descending) -----
-  // A queued engine command since E5 (sanctioned delta D4): applied at the
-  // next tick boundary with the tick-authoritative multiplier, not this
-  // render's. Settlement rides the cashedOut event listener in the game loop.
   const cashOut = useCallback(() => {
-    if (phaseRef.current !== "diving") return;
-    if (!participatingRef.current) return;
-    if (hasCashedRef.current) return;
-    engineRef.current?.submit({ type: "cashOut" });
-    // stay in "diving" — anchor continues until the chain snaps.
+    engine.submit({ type: "cashOut" });
   }, []);
 
-  // ----- chest pick — a queued engine command since E5 (D4) -----
-  // Chest math, the result timer and the return to betting are machine-owned;
-  // display + settlement ride the chestPicked event listener in the game loop.
   const pickChest = useCallback((id: 0 | 1 | 2) => {
-    engineRef.current?.submit({ type: "pickChest", chestId: id });
+    engine.submit({ type: "pickChest", chestId: id });
   }, []);
 
   // reset per-round flags whenever we return to the betting window
@@ -116,70 +85,23 @@ export default function AbyssAnchor() {
     setCashFlash(false);
   }, [phase]);
 
-  // ----- game loop -----
+  // ----- session attach: canvas + event subscriptions -----
   useEffect(() => {
-    // Assemble the RenderState snapshot from refs only (never render-scope
-    // variables — docs/05_RENDERING_ARCHITECTURE.md §20 risk 3) and hand it
-    // to the SceneRenderer. The rAF loop stays here: the renderer never
-    // schedules itself (§17). Since E3, `animTime` reads the engine's
-    // simulation clock (docs/06 §8: the accumulated clamped clock is
-    // precisely simTime after the fixed-tick extraction).
-    const renderFrame = (frameDt: number) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      if (rendererRef.current === null) rendererRef.current = new SceneRenderer(canvas);
-      const renderer = rendererRef.current;
-      renderer.resize(canvas.clientWidth, canvas.clientHeight, window.devicePixelRatio || 1);
-
-      // Ship-impact FX clock: performance.now() bookkeeping stays with the
-      // caller (§12); the renderer only ever sees elapsed seconds.
-      let shipImpact: RenderState["shipImpact"] = null;
-      if (shipImpactRef.current != null) {
-        const elapsed = (performance.now() - shipImpactRef.current) / 1000;
-        if (elapsed < SHIP_IMPACT_FX_SECONDS) {
-          shipImpact = { elapsed };
-        } else {
-          shipImpactRef.current = null;
-        }
-      }
-
-      const worldY = engine.worldY;
-      renderer.frame(
-        {
-          phase: phaseRef.current,
-          worldY,
-          depthRatio: Math.min(1, worldY / CHAIN_MAX_DEPTH),
-          boost: engine.boost,
-          creatures: engine.creatures,
-          crashed: phaseRef.current === "crashed",
-          shipImpact,
-        },
-        { animTime: engine.simTime, frameDt },
-      );
-    };
-
-    // Since E5 the diving pipeline (docs/06 §6.3) lives inside the engine
-    // (DiveSimulation, §9); the world state read above (worldY, boost,
-    // creatures) is pulled from the engine per frame (§12 pull model).
-    const engine = new GameEngine({ authority: roundAuthority, worldRng });
-    engineRef.current = engine;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const renderer = new SceneRenderer(canvas);
 
     // Settlement + display listeners (§3, §12: the settlement layer
     // subscribes to engine events and owns all money math — verbatim; the
     // engine computes outcomes, never balances). UI flash timings
     // (CASH/JACKPOT_FLASH_MS) stay here per §8.
     const subscriptions = [
-      engine.events.on("stateChanged", ({ to }) => {
-        setPhase(ENGINE_STATE_TO_PHASE[to]);
-      }),
       engine.events.on("betPlaced", ({ amount }) => {
         setBalance((prev) => +(prev - amount).toFixed(2));
         setParticipating(true);
       }),
       engine.events.on("diveStarted", () => {
         roundBetRef.current = participatingRef.current ? betRef.current : 0;
-        setBoost(0);
-        setMultiplier(1);
         setChests(null);
         setChosenChest(null);
         hasCashedRef.current = false;
@@ -197,15 +119,12 @@ export default function AbyssAnchor() {
         setTimeout(() => setCashFlash(false), CASH_FLASH_MS);
       }),
       engine.events.on("crashed", ({ multiplier: m }) => {
-        setMultiplier(m);
         if (!hasCashedRef.current) {
           setHistory((h) => [{ mult: m, crashed: true }, ...h].slice(0, HISTORY_LIMIT));
         }
       }),
       engine.events.on("shipImpact", ({ jackpotMultiplier: jackpot }) => {
         jackpotMultRef.current = jackpot;
-        shipImpactRef.current = performance.now(); // FX bookkeeping until E6
-        setMultiplier(jackpot);
         if (participatingRef.current && !hasCashedRef.current) {
           const win = +(roundBetRef.current * jackpot).toFixed(2);
           setBalance((b) => +(b + win).toFixed(2));
@@ -223,7 +142,6 @@ export default function AbyssAnchor() {
       }),
       engine.events.on("chestPicked", ({ chestId, chestMultiplier, finalMultiplier }) => {
         setChosenChest({ id: chestId, multiplier: chestMultiplier, opened: true });
-        setMultiplier(finalMultiplier);
         if (participatingRef.current) {
           // The previous jackpot win was already credited; add the delta from multiplying it.
           const jackpot = jackpotMultRef.current;
@@ -239,34 +157,28 @@ export default function AbyssAnchor() {
       }),
     ];
 
-    // The rAF loop feeds wall-clock frame deltas into the engine and
-    // renders once per frame with the latest state (§7: ticks and frames
-    // are independent). frameDt keeps the previous clamp — it is the
-    // renderer's contract value (docs/05 §4), not a simulation input.
-    const frame = (ts: number) => {
-      const last = lastTsRef.current ?? ts;
-      const wallDt = (ts - last) / 1000;
-      lastTsRef.current = ts;
-      engine.advance(wallDt);
-      // HUD mirror of the continuous diving values (multiplier, boost) —
-      // engine state read by pull (§12), synced once per frame while the
-      // dive runs; the locked values outside diving arrive via the event
-      // listeners above. The full D5 per-frame public-state read is E6.
-      if (engine.state === "diving") {
-        setMultiplier(engine.multiplier);
-        setBoost(engine.boost);
-      }
-      renderFrame(Math.min(MAX_TICK_SECONDS, wallDt));
-      rafRef.current = requestAnimationFrame(frame);
-    };
-    rafRef.current = requestAnimationFrame(frame);
+    // The driver owns the rAF loop and the wall clock (§13); this sink is
+    // the host side: size + render the canvas from the engine's projections
+    // and mirror public state into the HUD each frame (delta D5 — the
+    // 100 ms countdown interval is gone). Equal-value setState calls bail
+    // out, so frames without visible change re-render nothing.
+    driver.attach({
+      frame: (state, time) => {
+        renderer.resize(canvas.clientWidth, canvas.clientHeight, window.devicePixelRatio || 1);
+        renderer.frame(state, time);
+      },
+      sync: (s) => {
+        setPhase(s.phase);
+        setCountdown(s.countdownSeconds);
+        setMultiplier(s.multiplier);
+        setBoost(s.boost);
+      },
+    });
+
     return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      lastTsRef.current = null;
+      driver.detach();
       subscriptions.forEach((unsubscribe) => unsubscribe());
-      engineRef.current = null;
-      rendererRef.current?.dispose();
-      rendererRef.current = null;
+      renderer.dispose();
     };
   }, []);
 

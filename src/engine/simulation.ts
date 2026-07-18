@@ -35,6 +35,21 @@ import type { Rng } from "./rng";
 /** Terminal outcome of one diving tick (§6.3 steps 4/8): reported by the pipeline, applied by the machine. */
 export type DivingTickOutcome = "crashed" | "seaFloor";
 
+/**
+ * The world's serializable snapshot slice (§14): anchor depth, boost,
+ * multiplier, the creature collection and its spawn cursor. Plain JSON
+ * data; the creature array is deep-copied on both snapshot() and restore()
+ * so a snapshot never aliases live engine state.
+ */
+export interface WorldSnapshot {
+  worldY: number;
+  boost: number;
+  multiplier: number;
+  nextSpawnAt: number;
+  nextCreatureId: number;
+  creatures: Creature[];
+}
+
 export class DiveSimulation {
   private _worldY = 0; // anchor's depth in world px
   private _boost = 0; // 0..1 short boost when goldfish
@@ -78,6 +93,28 @@ export class DiveSimulation {
    */
   lockMultiplier(value: number): void {
     this._multiplier = value;
+  }
+
+  /** The world's §14 snapshot slice — plain data, deep-copied, no aliasing. */
+  snapshot(): WorldSnapshot {
+    return {
+      worldY: this._worldY,
+      boost: this._boost,
+      multiplier: this._multiplier,
+      nextSpawnAt: this.nextSpawnAt,
+      nextCreatureId: this.nextCreatureId,
+      creatures: this._creatures.map((c) => ({ ...c })),
+    };
+  }
+
+  /** Set the world to a snapshot's state (§14). Pure assignment; no draws, no events. */
+  restore(s: WorldSnapshot): void {
+    this._worldY = s.worldY;
+    this._boost = s.boost;
+    this._multiplier = s.multiplier;
+    this.nextSpawnAt = s.nextSpawnAt;
+    this.nextCreatureId = s.nextCreatureId;
+    this._creatures = s.creatures.map((c) => ({ ...c }));
   }
 
   /**

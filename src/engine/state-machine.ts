@@ -19,6 +19,11 @@
 // stepping), so cashout uses the tick-authoritative multiplier, never a
 // stale render's. Invalid commands are rejected and reported (§18 ring 1) —
 // never silently applied, never thrown.
+//
+// E6: `impactAt` (simTime at entry(impact)) is recorded here so the engine
+// computes `RenderState.shipImpact.elapsed = simTime − impactAt` on the
+// simulation clock (§8 — the component's performance.now() bookkeeping is
+// deleted); the machine's serializable slice is `RoundSnapshot` (§14).
 
 import type { Phase } from "@/rendering/scene-renderer";
 import { TICK_SECONDS } from "./clock";
@@ -54,6 +59,29 @@ export interface ParticipantRoundState {
 /** Duration (ms) → whole simulation ticks (§8 quantization). */
 const ticksFor = (ms: number): number => Math.round(ms / 1000 / TICK_SECONDS);
 
+/**
+ * The machine's serializable snapshot slice (§14): state-machine position,
+ * round data (crashAt and unrevealed chests are authority-secret — the
+ * public/authority split is latent until Phase 8), and participant round
+ * state. Plain JSON data; arrays/objects are deep-copied on both
+ * snapshot() and restore() so a snapshot never aliases live engine state.
+ */
+export interface RoundSnapshot {
+  state: EngineStateName;
+  roundId: number;
+  countdownTicks: number;
+  /** Remaining whole ticks of the current state's pending timer, if any. */
+  timerTicks: number | null;
+  diveStartedAt: number;
+  crashAt: number;
+  jackpotMultiplier: number;
+  /** simTime at entry(impact); null outside the impact→next-dive window. */
+  impactAt: number | null;
+  chests: [BonusChest, BonusChest, BonusChest] | null;
+  chosenChestId: 0 | 1 | 2 | null;
+  participant: ParticipantRoundState | null;
+}
+
 interface RoundStateMachineDeps {
   authority: RoundAuthority;
   events: EventBus<EngineEventMap>;
@@ -69,8 +97,9 @@ export class RoundStateMachine {
   private _crashAt = 0;
   private _diveStartedAt = 0;
   private jackpotMultiplier = 0;
-  private chests: [BonusChest, BonusChest, BonusChest] | null = null;
-  private chosenChestId: 0 | 1 | 2 | null = null;
+  private _impactAt: number | null = null;
+  private _chests: [BonusChest, BonusChest, BonusChest] | null = null;
+  private _chosenChestId: 0 | 1 | 2 | null = null;
   private _participant: ParticipantRoundState | null = null;
 
   constructor(private readonly deps: RoundStateMachineDeps) {}
@@ -102,6 +131,19 @@ export class RoundStateMachine {
     return this._participant;
   }
 
+  /** simTime at entry(impact) — the §8 base for shipImpact FX elapsed; null outside impact→next-dive. */
+  get impactAt(): number | null {
+    return this._impactAt;
+  }
+
+  get chests(): Readonly<[BonusChest, BonusChest, BonusChest]> | null {
+    return this._chests;
+  }
+
+  get chosenChestId(): 0 | 1 | 2 | null {
+    return this._chosenChestId;
+  }
+
   /** One simulation tick (§5 transition table). Called by GameEngine once per consumed tick. */
   step(simTime: number, dtSeconds: number): void {
     switch (this._state) {
@@ -112,7 +154,7 @@ export class RoundStateMachine {
       case "diving": {
         const outcome = this.deps.sim.tick(simTime - this._diveStartedAt, dtSeconds, this._crashAt);
         if (outcome === "crashed") this.enterCrashed();
-        else if (outcome === "seaFloor") this.enterImpact();
+        else if (outcome === "seaFloor") this.enterImpact(simTime);
         break;
       }
       case "crashed":
@@ -178,12 +220,12 @@ export class RoundStateMachine {
 
   // §5: bonus ──[pickChest]→ apply chest ──[CHEST_RESULT duration]→ betting.
   private applyPickChest(command: EngineCommand & { type: "pickChest" }): void {
-    if (this._state !== "bonus" || this.chests === null) {
+    if (this._state !== "bonus" || this._chests === null) {
       return this.reject(command, "not-in-bonus");
     }
-    if (this.chosenChestId !== null) return this.reject(command, "chest-already-picked");
-    this.chosenChestId = command.chestId;
-    const chest = this.chests[command.chestId];
+    if (this._chosenChestId !== null) return this.reject(command, "chest-already-picked");
+    this._chosenChestId = command.chestId;
+    const chest = this._chests[command.chestId];
     const finalMultiplier = +(this.jackpotMultiplier * chest.multiplier).toFixed(2);
     this.deps.sim.lockMultiplier(finalMultiplier);
     this.deps.events.emit("chestPicked", {
@@ -209,8 +251,9 @@ export class RoundStateMachine {
     this._crashAt = this.deps.authority.sampleCrashPoint();
     this._diveStartedAt = simTime;
     this.jackpotMultiplier = 0;
-    this.chests = null;
-    this.chosenChestId = null;
+    this._impactAt = null;
+    this._chests = null;
+    this._chosenChestId = null;
     this.timerTicks = null;
     this.deps.sim.reset();
     this.transition("diving");
@@ -228,9 +271,10 @@ export class RoundStateMachine {
 
   // entry(impact), §5/§6.5: the authority samples the jackpot; the jackpot
   // multiplier locks; a participant not yet cashed out is auto-cashed at it
-  // (settlement credits on the shipImpact event, as today); SHIP_IMPACT_TO_
-  // CHESTS duration → bonus.
-  private enterImpact(): void {
+  // (settlement credits on the shipImpact event, as today); impactAt := simTime
+  // (the FX-elapsed base, §8); SHIP_IMPACT_TO_CHESTS duration → bonus.
+  private enterImpact(simTime: number): void {
+    this._impactAt = simTime;
     this.jackpotMultiplier = this.deps.authority.sampleJackpot();
     this.deps.sim.lockMultiplier(this.jackpotMultiplier);
     if (this._participant !== null && !this._participant.cashedOut) {
@@ -247,21 +291,63 @@ export class RoundStateMachine {
 
   // entry(bonus), §5: the authority rolls the chests; then wait for the pick.
   private enterBonus(): void {
-    this.chests = this.deps.authority.rollBonusChests();
+    this._chests = this.deps.authority.rollBonusChests();
     this.timerTicks = null;
     this.transition("bonus");
-    this.deps.events.emit("chestsRevealed", { roundId: this._roundId, chests: this.chests });
+    this.deps.events.emit("chestsRevealed", { roundId: this._roundId, chests: this._chests });
   }
 
   // entry(betting), §5/§6: the round ends, the next roundId begins, the
-  // countdown restarts, the participant round state clears.
+  // countdown restarts, the participant round state clears. impactAt clears
+  // too — the jackpot FX (1.4 s) is long over when the result interval ends.
   private enterBetting(outcome: "crashed" | "jackpot"): void {
     this.deps.events.emit("roundEnded", { roundId: this._roundId, outcome });
     this._roundId++;
     this.countdownTicks = ticksFor(BETTING_WINDOW_SECONDS * 1000);
     this.timerTicks = null;
+    this._impactAt = null;
     this._participant = null;
     this.transition("betting");
     this.deps.events.emit("bettingOpened", { roundId: this._roundId });
+  }
+
+  /** The machine's §14 snapshot slice — plain data, deep-copied, no aliasing. */
+  snapshot(): RoundSnapshot {
+    return {
+      state: this._state,
+      roundId: this._roundId,
+      countdownTicks: this.countdownTicks,
+      timerTicks: this.timerTicks,
+      diveStartedAt: this._diveStartedAt,
+      crashAt: this._crashAt,
+      jackpotMultiplier: this.jackpotMultiplier,
+      impactAt: this._impactAt,
+      chests:
+        this._chests === null
+          ? null
+          : [{ ...this._chests[0] }, { ...this._chests[1] }, { ...this._chests[2] }],
+      chosenChestId: this._chosenChestId,
+      participant: this._participant === null ? null : { ...this._participant },
+    };
+  }
+
+  /**
+   * Set the machine to a snapshot's position (§14). A pure state
+   * assignment: no entry actions run, no events are emitted — projections
+   * of the restored state are correct by construction.
+   */
+  restore(s: RoundSnapshot): void {
+    this._state = s.state;
+    this._roundId = s.roundId;
+    this.countdownTicks = s.countdownTicks;
+    this.timerTicks = s.timerTicks;
+    this._diveStartedAt = s.diveStartedAt;
+    this._crashAt = s.crashAt;
+    this.jackpotMultiplier = s.jackpotMultiplier;
+    this._impactAt = s.impactAt;
+    this._chests =
+      s.chests === null ? null : [{ ...s.chests[0] }, { ...s.chests[1] }, { ...s.chests[2] }];
+    this._chosenChestId = s.chosenChestId;
+    this._participant = s.participant === null ? null : { ...s.participant };
   }
 }

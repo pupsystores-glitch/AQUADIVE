@@ -88,8 +88,8 @@ describe("round state machine — §5 transition table on the simulation clock (
 
     advanceTicks(h.engine, BETTING_TICKS - 1);
     expect(h.engine.state).toBe("betting");
-    expect(h.engine.countdown).toBeCloseTo(TICK_SECONDS, 12);
-    expect(h.engine.worldY).toBe(0); // pipeline never runs outside diving
+    expect(h.engine.getPublicState().countdownSeconds).toBeCloseTo(TICK_SECONDS, 12);
+    expect(h.engine.getRenderState().worldY).toBe(0); // pipeline never runs outside diving
 
     advanceTicks(h.engine, 1);
     expect(h.engine.state).toBe("diving");
@@ -99,8 +99,8 @@ describe("round state machine — §5 transition table on the simulation clock (
     ]);
 
     advanceTicks(h.engine, 2); // pipeline runs once per tick while diving
-    expect(h.engine.worldY).toBeGreaterThan(0);
-    expect(h.engine.multiplier).toBeCloseTo(multiplierAt(2 * TICK_SECONDS), 12);
+    expect(h.engine.getRenderState().worldY).toBeGreaterThan(0);
+    expect(h.engine.getPublicState().multiplier).toBeCloseTo(multiplierAt(2 * TICK_SECONDS), 12);
   });
 
   it("crash path: pipeline outcome → crashed (144 ticks) → betting; world frozen outside diving (D3)", () => {
@@ -110,8 +110,8 @@ describe("round state machine — §5 transition table on the simulation clock (
     advanceTicks(h.engine, BETTING_TICKS); // → diving
     advanceTicks(h.engine, 1);
     expect(h.engine.state).toBe("crashed");
-    expect(h.engine.worldY).toBe(0);
-    expect(h.engine.multiplier).toBe(1); // entry(crashed) clamps to crashAt
+    expect(h.engine.getRenderState().worldY).toBe(0);
+    expect(h.engine.getPublicState().multiplier).toBe(1); // entry(crashed) clamps to crashAt
     expect(h.log.filter((e) => e.name === "crashed")).toEqual([
       { name: "crashed", payload: { roundId: 1, multiplier: 1 } },
     ]);
@@ -120,8 +120,8 @@ describe("round state machine — §5 transition table on the simulation clock (
     expect(h.engine.state).toBe("crashed");
     advanceTicks(h.engine, 1);
     expect(h.engine.state).toBe("betting");
-    expect(h.engine.worldY).toBe(0); // no pipeline outside diving
-    expect(h.engine.countdown).toBe(5);
+    expect(h.engine.getRenderState().worldY).toBe(0); // no pipeline outside diving
+    expect(h.engine.getPublicState().countdownSeconds).toBe(5);
     expect(h.log.filter((e) => e.name === "roundEnded")).toEqual([
       { name: "roundEnded", payload: { roundId: 1, outcome: "crashed" } },
     ]);
@@ -136,9 +136,9 @@ describe("round state machine — §5 transition table on the simulation clock (
 
     advanceUntil(h.engine, 5000, () => h.engine.state !== "diving");
     expect(h.engine.state).toBe("impact");
-    expect(h.engine.worldY).toBeGreaterThanOrEqual(4200); // CHAIN_MAX_DEPTH reached
+    expect(h.engine.getRenderState().worldY).toBeGreaterThanOrEqual(4200); // CHAIN_MAX_DEPTH reached
     expect(h.calls.jackpot).toBe(1);
-    expect(h.engine.multiplier).toBe(120); // jackpot locked at entry(impact)
+    expect(h.engine.getPublicState().multiplier).toBe(120); // jackpot locked at entry(impact)
     expect(h.log.filter((e) => e.name === "shipImpact")).toEqual([
       { name: "shipImpact", payload: { roundId: 1, jackpotMultiplier: 120 } },
     ]);
@@ -165,7 +165,7 @@ describe("round state machine — §5 transition table on the simulation clock (
         payload: { roundId: 1, chestId: 1, chestMultiplier: 6.5, finalMultiplier: 780 }, // +(120·6.5).toFixed(2)
       },
     ]);
-    expect(h.engine.multiplier).toBe(780); // chest final locked
+    expect(h.engine.getPublicState().multiplier).toBe(780); // chest final locked
     expect(h.engine.state).toBe("bonus"); // result interval still showing
 
     // The result timer starts at the applying tick boundary and counts that
@@ -235,7 +235,7 @@ describe("command queue — §13 validation at the applying tick (D4, §18 ring 
 
     advanceTicks(h.engine, 10);
     const tickAuthoritative = multiplierAt(10 * TICK_SECONDS);
-    expect(h.engine.multiplier).toBeCloseTo(tickAuthoritative, 12);
+    expect(h.engine.getPublicState().multiplier).toBeCloseTo(tickAuthoritative, 12);
 
     h.engine.submit({ type: "cashOut" });
     advanceTicks(h.engine, 1);
@@ -247,7 +247,7 @@ describe("command queue — §13 validation at the applying tick (D4, §18 ring 
       tickAuthoritative,
       12,
     );
-    expect(h.engine.multiplier).toBeCloseTo(multiplierAt(11 * TICK_SECONDS), 12);
+    expect(h.engine.getPublicState().multiplier).toBeCloseTo(multiplierAt(11 * TICK_SECONDS), 12);
     expect(h.engine.state).toBe("diving"); // §5: cashout is not a transition
   });
 

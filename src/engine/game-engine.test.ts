@@ -1,15 +1,18 @@
 // Tests for the engine's fixed-tick accumulator (docs/06 §7, sanctioned
-// delta D2) and the facade's command/event edges (§12, §13; delta D4 —
-// commands apply at the next tick boundary). Transition and command
-// *validation* behavior is covered in state-machine.test.ts; the diving
-// pipeline itself in simulation.test.ts.
+// delta D2), the facade's command/event edges (§12, §13; delta D4 —
+// commands apply at the next tick boundary), and the E6 projections
+// (§14/§15: getRenderState / getRenderTime / getPublicState). Transition
+// and command *validation* behavior is covered in state-machine.test.ts;
+// the diving pipeline itself in simulation.test.ts; snapshot()/restore()
+// in snapshot.test.ts.
 import { describe, expect, it } from "vitest";
+import { CHAIN_MAX_DEPTH } from "@/shared/world";
 import { MAX_TICKS_PER_ADVANCE, TICK_SECONDS } from "./clock";
 import { GameEngine } from "./game-engine";
 import type { RoundAuthority } from "./round-authority";
 
-const stubAuthority = (): RoundAuthority => ({
-  sampleCrashPoint: () => 2,
+const stubAuthority = (crashPoint: number): RoundAuthority => ({
+  sampleCrashPoint: () => crashPoint,
   sampleJackpot: () => 100,
   rollBonusChests: () => [
     { id: 0, multiplier: 2, opened: false },
@@ -18,8 +21,23 @@ const stubAuthority = (): RoundAuthority => ({
   ],
 });
 
-const makeEngine = () =>
-  new GameEngine({ authority: stubAuthority(), worldRng: { next: () => 0.5 } });
+const makeEngine = (crashPoint = 2) =>
+  new GameEngine({ authority: stubAuthority(crashPoint), worldRng: { next: () => 0.5 } });
+
+const BETTING_TICKS = 300;
+
+const advanceTicks = (engine: GameEngine, n: number) => {
+  for (let i = 0; i < n; i++) engine.advance(TICK_SECONDS);
+};
+
+/** Advance until the predicate holds; throws if `cap` ticks pass first. */
+const advanceUntil = (engine: GameEngine, cap: number, done: () => boolean) => {
+  for (let i = 0; i < cap; i++) {
+    engine.advance(TICK_SECONDS);
+    if (done()) return;
+  }
+  throw new Error(`condition not reached within ${cap} ticks`);
+};
 
 describe("GameEngine.advance — fixed 60 Hz tick accumulator (§7)", () => {
   it("consumes whole ticks with dt = TICK_SECONDS and carries the sub-tick remainder", () => {
@@ -56,28 +74,20 @@ describe("GameEngine.advance — fixed 60 Hz tick accumulator (§7)", () => {
   it("advances the machine clock per tick: countdown decrements on the simulation clock (D1)", () => {
     const engine = makeEngine();
     expect(engine.state).toBe("betting");
-    expect(engine.countdown).toBe(5);
+    expect(engine.getPublicState().countdownSeconds).toBe(5);
     for (let i = 0; i < 60; i++) engine.advance(TICK_SECONDS); // one simulated second
-    expect(engine.countdown).toBeCloseTo(4, 12);
+    expect(engine.getPublicState().countdownSeconds).toBeCloseTo(4, 12);
     expect(engine.state).toBe("betting");
   });
 
-  it("is deterministic: identical advance + command sequences produce identical state (§7)", () => {
+  it("is deterministic: identical advance + command sequences produce identical snapshots (§7, §14)", () => {
     const run = () => {
       const engine = makeEngine();
       engine.submit({ type: "placeBet", amount: 10 });
       for (const dt of [0.007, 0.021, 0.0166, 0.05, 0.001, 0.0333, 1.7, 0.016]) {
         engine.advance(dt);
       }
-      return {
-        tickCount: engine.tickCount,
-        simTime: engine.simTime,
-        state: engine.state,
-        countdown: engine.countdown,
-        worldY: engine.worldY,
-        multiplier: engine.multiplier,
-        creatures: engine.creatures.length,
-      };
+      return engine.snapshot();
     };
     expect(run()).toEqual(run());
   });
@@ -127,5 +137,117 @@ describe("GameEngine — post-tick event dispatch (§12)", () => {
 
     engine.advance(TICK_SECONDS);
     expect(seen).toEqual([1]);
+  });
+});
+
+describe("GameEngine — RenderState projection (§15: byte-compatible with docs/05 §4)", () => {
+  it("projects the full shape at rest and while diving", () => {
+    const engine = makeEngine();
+    expect(engine.getRenderState()).toEqual({
+      phase: "idle", // betting → "idle" via the fixed §5 map
+      worldY: 0,
+      depthRatio: 0,
+      boost: 0,
+      creatures: [],
+      crashed: false,
+      shipImpact: null,
+    });
+
+    advanceTicks(engine, BETTING_TICKS + 60); // one second into the dive
+    const rs = engine.getRenderState();
+    expect(rs.phase).toBe("diving");
+    expect(rs.worldY).toBeGreaterThan(0);
+    expect(rs.depthRatio).toBeCloseTo(rs.worldY / CHAIN_MAX_DEPTH, 12);
+    expect(rs.creatures.length).toBeGreaterThan(0);
+    expect(rs.crashed).toBe(false);
+  });
+
+  it("flags crashed while in the crashed state", () => {
+    const engine = makeEngine(1); // crash on the first diving tick
+    advanceTicks(engine, BETTING_TICKS + 1);
+    const rs = engine.getRenderState();
+    expect(rs.phase).toBe("crashed");
+    expect(rs.crashed).toBe(true);
+  });
+
+  it("computes shipImpact.elapsed on the simulation clock from entry(impact) (§8)", () => {
+    const engine = makeEngine(1e9); // never crashes → sea-floor path
+    advanceTicks(engine, BETTING_TICKS);
+    advanceUntil(engine, 5000, () => engine.state !== "diving");
+    expect(engine.state).toBe("impact");
+    expect(engine.getRenderState().shipImpact).toEqual({ elapsed: 0 }); // impactAt = this tick
+
+    advanceTicks(engine, 30);
+    expect(engine.getRenderState().shipImpact?.elapsed).toBeCloseTo(30 * TICK_SECONDS, 12);
+
+    // Through bonus and back to betting the field clears with the round.
+    advanceTicks(engine, 84 - 30); // impact → bonus
+    expect(engine.state).toBe("bonus");
+    engine.submit({ type: "pickChest", chestId: 0 });
+    advanceTicks(engine, 1 + 132); // pick + result interval → betting
+    expect(engine.state).toBe("betting");
+    expect(engine.getRenderState().shipImpact).toBeNull();
+  });
+});
+
+describe("GameEngine — RenderTime + public-state projections (§13, D5)", () => {
+  it("getRenderTime: animTime is the simulation clock; frameDt is the clamped last wall delta", () => {
+    const engine = makeEngine();
+    expect(engine.getRenderTime()).toEqual({ animTime: 0, frameDt: 0 });
+
+    engine.advance(0.007); // sub-tick frame: no tick consumed, frameDt still reported
+    expect(engine.getRenderTime()).toEqual({ animTime: 0, frameDt: 0.007 });
+
+    engine.advance(2.5); // tab-away frame: clamped to the 0.05 s renderer contract value
+    expect(engine.getRenderTime().frameDt).toBe(0.05);
+    expect(engine.getRenderTime().animTime).toBeCloseTo(engine.simTime, 12);
+  });
+
+  it("getPublicState: the HUD's per-frame read, participant included", () => {
+    const engine = makeEngine();
+    expect(engine.getPublicState()).toEqual({
+      phase: "idle",
+      roundId: 1,
+      countdownSeconds: 5,
+      multiplier: 1,
+      boost: 0,
+      participant: null,
+      chests: null,
+      chosenChestId: null,
+    });
+
+    engine.submit({ type: "placeBet", amount: 25 });
+    advanceTicks(engine, 1);
+    expect(engine.getPublicState().participant).toEqual({
+      betAmount: 25,
+      cashedOut: false,
+      cashedOutAt: null,
+    });
+
+    advanceTicks(engine, BETTING_TICKS - 1); // → diving
+    advanceTicks(engine, 10); // let the multiplier grow past 1
+    engine.submit({ type: "cashOut" });
+    advanceTicks(engine, 1);
+    const ps = engine.getPublicState();
+    expect(ps.phase).toBe("diving"); // §5: cashout is not a transition
+    expect(ps.participant?.cashedOut).toBe(true);
+    expect(ps.participant?.cashedOutAt).toBeGreaterThan(1);
+  });
+
+  it("getPublicState: chests and the chosen chest id surface in bonus", () => {
+    const engine = makeEngine(1e9);
+    advanceTicks(engine, BETTING_TICKS);
+    advanceUntil(engine, 5000, () => engine.state !== "diving");
+    advanceTicks(engine, 84); // impact → bonus
+    let ps = engine.getPublicState();
+    expect(ps.phase).toBe("bonus");
+    expect(ps.chests).toHaveLength(3);
+    expect(ps.chosenChestId).toBeNull();
+
+    engine.submit({ type: "pickChest", chestId: 2 });
+    advanceTicks(engine, 1);
+    ps = engine.getPublicState();
+    expect(ps.chosenChestId).toBe(2);
+    expect(ps.multiplier).toBe(+(100 * 30).toFixed(2)); // jackpot × chest, locked
   });
 });

@@ -2,33 +2,77 @@
 //
 // E3 landed the simulation clock + fixed-tick accumulator (§7, §8;
 // sanctioned delta D2) and the event bus edge (§12). E4 added the round
-// state machine (§5, §6; deltas D1, D3). E5 moves the simulation systems
-// inside (DiveSimulation, §9 — the divingTick seam is gone) and lands the
-// command queue (§13; delta D4): submit() queues, and every queued command
-// is validated and applied at the next tick boundary, before the machine
-// steps — commands are part of the replayable input log (§7 determinism:
-// state(n+1) = f(state(n), commandsAppliedAtTickBoundary, rngDraws)).
+// state machine (§5, §6; deltas D1, D3). E5 moved the simulation systems
+// inside (DiveSimulation, §9) and landed the command queue (§13; delta D4):
+// submit() queues, and every queued command is validated and applied at the
+// next tick boundary, before the machine steps — commands are part of the
+// replayable input log (§7 determinism: state(n+1) = f(state(n),
+// commandsAppliedAtTickBoundary, rngDraws)).
 //
-// Remaining mid-migration seams (§20 risk 2, removed in E6): the component
-// rAF feeds wall-clock frame deltas into advance() until the EngineDriver
-// lands; the world/HUD reads below (worldY, boost, multiplier, creatures)
-// are plain getters until the §14/§15 projections (getRenderState /
-// getPublicState) land. No wall clock is ever read inside the engine (§8).
+// E6 completes the extraction: the §14/§15 projections (getRenderState /
+// getRenderTime / getPublicState) replace the mid-migration world getters,
+// and snapshot()/restore() land (§14). The EngineDriver (driver.ts) owns
+// the rAF loop and the wall clock; no wall clock is ever read inside the
+// engine (§8) — advance() receives wall-clock deltas as inputs.
 
+import { CHAIN_MAX_DEPTH } from "@/shared/world";
+import type { Phase, RenderState, RenderTime } from "@/rendering/render-state";
 import { MAX_TICKS_PER_ADVANCE, TICK_SECONDS } from "./clock";
 import type { EngineCommand } from "./commands";
-import type { Creature } from "./domain/creatures";
+import type { BonusChest } from "./domain/outcomes";
+import { MAX_TICK_SECONDS } from "./domain/tuning";
 import { EventBus, type EngineEventMap, type EngineStateName } from "./events";
 import type { RoundAuthority } from "./round-authority";
 import type { Rng } from "./rng";
-import { DiveSimulation } from "./simulation";
-import { RoundStateMachine } from "./state-machine";
+import { DiveSimulation, type WorldSnapshot } from "./simulation";
+import {
+  ENGINE_STATE_TO_PHASE,
+  RoundStateMachine,
+  type ParticipantRoundState,
+  type RoundSnapshot,
+} from "./state-machine";
 
 export interface GameEngineDeps {
   /** Outcome authority consulted at transition entry actions (§16). */
   authority: RoundAuthority;
   /** The `world` Rng stream (§11): spawn intervals, creature kinds/attributes. */
   worldRng: Rng;
+}
+
+/**
+ * The public UI state for the HUD (§13, §15): read by pull once per frame
+ * (delta D5 — no per-tick events for continuous values). `phase` is the
+ * fixed §5 projection onto renderer Phase strings — the vocabulary the
+ * shell already speaks.
+ */
+export interface EnginePublicState {
+  phase: Phase;
+  roundId: number;
+  countdownSeconds: number;
+  multiplier: number;
+  boost: number;
+  participant: Readonly<ParticipantRoundState> | null;
+  chests: Readonly<[BonusChest, BonusChest, BonusChest]> | null;
+  chosenChestId: 0 | 1 | 2 | null;
+}
+
+/** Snapshot schema version — bump on any breaking change to the §14 shape. */
+export const SNAPSHOT_SCHEMA_VERSION = 1;
+
+/**
+ * The complete, serializable engine state (§14): the unit of restore,
+ * reconnect, spectator join, replay and testing. Plain JSON data only.
+ * RNG stream positions are deliberately absent: in authority mode both
+ * streams are unseeded Math.random (no position exists); seeded-stream
+ * serialization lands with the Phase 8 seeded Rng. The AuthoritySnapshot/
+ * PublicSnapshot secrecy split (§14 †) stays latent until Phase 8 — this
+ * is the authority view.
+ */
+export interface EngineSnapshot {
+  schemaVersion: number;
+  tickCount: number;
+  round: RoundSnapshot;
+  world: WorldSnapshot;
 }
 
 export class GameEngine {
@@ -40,6 +84,8 @@ export class GameEngine {
   private commandQueue: EngineCommand[] = [];
   private accumulator = 0;
   private ticks = 0;
+  /** Last advance()'s clamped wall dt — the renderer contract value (docs/05 §4), never a simulation input. */
+  private lastFrameDt = 0;
 
   constructor(deps: GameEngineDeps) {
     this.sim = new DiveSimulation(deps.worldRng);
@@ -60,34 +106,88 @@ export class GameEngine {
     return this.ticks * TICK_SECONDS;
   }
 
-  /** Current engine state (§5 names; project to renderer Phase via ENGINE_STATE_TO_PHASE). */
+  /** Current engine state (§5 names; projected to renderer Phase in getRenderState/getPublicState). */
   get state(): EngineStateName {
     return this.machine.state;
   }
 
-  /** Betting countdown remaining, seconds (whole-tick quantized, §8). */
-  get countdown(): number {
-    return this.machine.countdown;
+  /**
+   * The renderer's per-frame input (§15): byte-compatible with the docs/05
+   * §4 shape. shipImpact.elapsed is simulation-clock based (§8: simTime −
+   * impactAt); the FX *lifetime* cutoff is renderer-owned (docs/05 R5 —
+   * the Effects layer no-ops once elapsed exceeds it), so the field stays
+   * non-null from impact until the next round's world reset.
+   */
+  getRenderState(): RenderState {
+    const state = this.machine.state;
+    const worldY = this.sim.worldY;
+    const impactAt = this.machine.impactAt;
+    return {
+      phase: ENGINE_STATE_TO_PHASE[state],
+      worldY,
+      depthRatio: Math.min(1, worldY / CHAIN_MAX_DEPTH),
+      boost: this.sim.boost,
+      creatures: this.sim.creatures,
+      crashed: state === "crashed",
+      shipImpact: impactAt === null ? null : { elapsed: this.simTime - impactAt },
+    };
   }
 
-  /** Anchor depth in world px — simulation state, read by pull (§12). */
-  get worldY(): number {
-    return this.sim.worldY;
+  /**
+   * The renderer's clock (§8, §13): animTime is the simulation clock;
+   * frameDt is the last advance()'s clamped wall delta — a presentation
+   * value the driver fed in, never read from a clock here.
+   */
+  getRenderTime(): RenderTime {
+    return { animTime: this.simTime, frameDt: this.lastFrameDt };
   }
 
-  /** Golden boost, 0..1 — simulation state, read by pull (§12). */
-  get boost(): number {
-    return this.sim.boost;
+  /** The HUD's per-frame state read (§13; delta D5 — pull, not events). */
+  getPublicState(): EnginePublicState {
+    return {
+      phase: ENGINE_STATE_TO_PHASE[this.machine.state],
+      roundId: this.machine.roundId,
+      countdownSeconds: this.machine.countdown,
+      multiplier: this.sim.multiplier,
+      boost: this.sim.boost,
+      participant: this.machine.participant,
+      chests: this.machine.chests,
+      chosenChestId: this.machine.chosenChestId,
+    };
   }
 
-  /** The round multiplier (grows while diving; locked at crash/jackpot/chest). */
-  get multiplier(): number {
-    return this.sim.multiplier;
+  /** The complete serializable engine state (§14). Built on demand, never per tick. */
+  snapshot(): EngineSnapshot {
+    return {
+      schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+      tickCount: this.ticks,
+      round: this.machine.snapshot(),
+      world: this.sim.snapshot(),
+    };
   }
 
-  /** The engine-owned creature collection (§10), projected read-only. */
-  get creatures(): readonly Creature[] {
-    return this.sim.creatures;
+  /**
+   * Set the engine to a snapshot's state (§14): the reconnect / spectator-
+   * join / replay entry point. Pending commands and accumulated wall time
+   * are discarded (they belong to the abandoned timeline); no events are
+   * emitted — the §14 invariant makes the first projected frame correct by
+   * construction. An unknown schema is rejected (§18 ring 1): engineError
+   * is reported and the current state is left untouched.
+   */
+  restore(snapshot: EngineSnapshot): void {
+    if (snapshot.schemaVersion !== SNAPSHOT_SCHEMA_VERSION) {
+      this.events.emit("engineError", {
+        roundId: this.machine.roundId,
+        code: "snapshot-schema-mismatch",
+        detail: { schemaVersion: snapshot.schemaVersion },
+      });
+      return;
+    }
+    this.ticks = snapshot.tickCount;
+    this.accumulator = 0;
+    this.commandQueue = [];
+    this.machine.restore(snapshot.round);
+    this.sim.restore(snapshot.world);
   }
 
   /**
@@ -111,6 +211,7 @@ export class GameEngine {
    * listeners land in the next tick's batch (§12: no reentrancy).
    */
   advance(wallDtSeconds: number): void {
+    this.lastFrameDt = Math.min(MAX_TICK_SECONDS, wallDtSeconds);
     this.accumulator += wallDtSeconds;
     let ticksThisAdvance = 0;
     while (this.accumulator >= TICK_SECONDS) {

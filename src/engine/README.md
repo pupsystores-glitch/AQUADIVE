@@ -1,20 +1,26 @@
 # src/engine
 
-Framework-agnostic game engine.
+Framework-agnostic game engine. Extraction COMPLETE (Sprint 3, E1–E6):
+`AbyssAnchor.tsx` is a UI shell; everything that *happens* in a round
+happens here.
 
 ## Responsibility
 
 Owns the simulation: the game loop (rAF driver, delta-time handling), the
-round state machine (betting → diving → crashed/bonus → idle), world
-simulation (creature spawning, collisions, anchor kinematics), and the typed
-event bus that other systems subscribe to.
+round state machine (betting → diving → crashed/impact/bonus → betting),
+world simulation (creature spawning, collisions, anchor kinematics), the
+typed event bus that other systems subscribe to, and the projections the
+outside reads (`RenderState`/`RenderTime` for the renderer, public state
+for the HUD, snapshots for restore/replay).
 
 ## Boundaries
 
-- No React, no DOM (except `requestAnimationFrame` via the loop driver).
+- No React, no DOM (except `requestAnimationFrame`, confined to `driver.ts`
+  — the engine's edge to the host environment, docs/06 §4).
 - No canvas drawing — the engine produces state; `src/rendering` consumes it.
 - No network calls — round events arrive through the service interface in
   `src/network`.
+- No money — the settlement layer subscribes to engine events (docs/06 §3).
 
 ## Contents (per docs/06_ENGINE_ARCHITECTURE.md §21)
 
@@ -70,5 +76,24 @@ multiplier, creatures) as plain getters until the E6 projections; the
 barrel no longer exports the domain functions — the facade and its edges
 are the whole public surface.
 
-Next — E6: EngineDriver owns rAF; RenderState/RenderTime/public-state
-projections; snapshot()/restore(); component becomes a UI shell (D5).
+Done — E6 (driver + projections + snapshots, sanctioned delta D5 — the
+extraction's final step): `driver.ts` — `EngineDriver` owns the rAF loop
+and the wall clock (§13; the single sanctioned `requestAnimationFrame`
+site, §4): per frame it feeds the wall delta into `advance()` and hands
+the engine's projections to the host-supplied sink (render + per-frame
+public-state sync; D5 deleted the component's 100 ms countdown interval).
+The driver+engine pair is owned per game session at module scope — detach
+pauses, re-attach resumes, remounting the component never restarts the
+world. The facade's §13 API is final: `getRenderState()` (byte-compatible
+docs/05 §4 shape; `shipImpact.elapsed = simTime − impactAt` on the
+simulation clock, §8 — the FX lifetime cutoff stays renderer-owned per
+docs/05 R5), `getRenderTime()` (`animTime = simTime`; `frameDt` = the
+clamped last wall delta the driver fed in), `getPublicState()` (phase via
+the fixed §5 projection, countdown, multiplier, boost, participant,
+chests, roundId), and `snapshot()`/`restore()` (§14: plain JSON data,
+deep-copied both ways, `schemaVersion`-guarded; restore discards pending
+commands and accumulated wall time and emits nothing — projections of the
+restored state are correct by construction; RNG stream positions are
+absent until seeded streams land in Phase 8). The E5 world-read seam
+getters (worldY/boost/multiplier/creatures/countdown) are gone; the §7
+clock constants left the barrel — outside consumers read projections.
