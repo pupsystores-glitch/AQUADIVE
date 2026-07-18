@@ -5,16 +5,10 @@
 // core domain types live in the engine (Creature, BonusChest —
 // src/engine/domain), on the shared floor (CreatureKind), or in the
 // renderer contract (Phase — src/rendering/render-state.ts). This module
-// keeps the UI/loop-shell types; RunState dissolves into engine state when
-// the round state machine lands (E4/E5).
-
-/** Per-round run state owned by the game loop while a dive is active. */
-export interface RunState {
-  startedAt: number;
-  crashAt: number; // multiplier at which it crashes
-  bet: number;
-  bonusTriggered: boolean;
-}
+// keeps the UI-shell types. RunState dissolved in E4: crashAt and the dive
+// clock moved into the engine's round state machine, the locked bet became
+// the component's settlement-side roundBetRef, and the one-shot
+// bonusTriggered flag became structural (the machine exits `diving`).
 
 /** A finished round as shown in the history strip. */
 export interface HistoryEntry {

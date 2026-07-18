@@ -41,5 +41,20 @@ per-tick simulation body is still component-owned, injected via the
 temporary `deps.tick` seam (deleted in E5); the component rAF feeds
 wall-clock deltas into `advance()` until the EngineDriver lands (E6).
 
-Next — E4: round state machine (deltas D1, D3). E5: simulation systems +
-command queue (D4). E6: EngineDriver + projections + snapshots (D5).
+Done — E4 (round state machine, sanctioned deltas D1 + D3):
+`state-machine.ts` — the five §5 states (betting/diving/crashed/impact/
+bonus), roundId, and every lifecycle timer as whole-tick counts on the
+simulation clock (§8; the component's setTimeout/setInterval chains and
+their phase re-check guards are gone — one pending timer, owned by the
+current state, structurally unable to misfire). Entry actions consult the
+RoundAuthority (§16); transitions emit the §12 events (stateChanged,
+diveStarted, crashed, shipImpact, chestsRevealed, chestPicked, roundEnded,
+bettingOpened, commandRejected). `ENGINE_STATE_TO_PHASE` is the fixed §5
+projection to renderer Phase strings. `clock.ts` holds the §7 tick
+constants. Remaining seams (E5 removes): the diving pipeline body is
+injected (`divingTick`, called only while diving; returns a terminal
+outcome — D3); `crashAt`/`diveElapsed` exposed for it; pickChest applies
+immediately (D4 pending).
+
+Next — E5: simulation systems + command queue (D4). E6: EngineDriver +
+projections + snapshots (D5).

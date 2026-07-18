@@ -6,7 +6,14 @@ Approvals received 2026-07-18: Commit 1 (`docs/06_ENGINE_ARCHITECTURE.md`) appro
 
 Commit 2 (E1) is COMPLETE and approved (2026-07-18): vitest harness + 26 characterization tests.
 
-Commit 4 (E3 — Engine skeleton) is COMPLETE (2026-07-18), awaiting review/approval before E4:
+Commit 5 (E4 — Round state machine) is COMPLETE (2026-07-18), awaiting review/approval before E5:
+
+- `RoundStateMachine` (`src/engine/state-machine.ts`): the five §5 engine states, `roundId`, and all lifecycle timers as **whole-tick counts** on the simulation clock (§8) — betting 300, crash banner 144, impact→chests 84, chest result 132. Entry actions consult the `RoundAuthority` (§16) and emit the §12 events. **Sanctioned deltas D1 + D3 land here**: phase timers and the multiplier's dive-elapsed time base (`diveStartedAt`/`engine.diveElapsed`) run on the simulation clock; the diving pipeline reports a terminal outcome ("crashed"/"seaFloor") and ends its tick — crash and sea-floor can never double-fire.
+- Deleted from the component: `beginDive`, the `CRASH_BANNER_MS` / `SHIP_IMPACT_TO_CHESTS_MS` / `CHEST_RESULT_TO_IDLE_MS` setTimeout chains **and their phase re-check guards** (structural now — one pending timer, owned by the current state), the `bonusTriggered` one-shot flag, and `RunState` (bet → settlement-side `roundBetRef`). The 100 ms countdown interval remains **display-only** (reads `engine.countdown`; the transition is engine-owned) until D5 deletes it in E6.
+- Settlement extracted from the transition code into §12 event listeners (crashed → history, shipImpact → jackpot credit, chestPicked → delta credit) — money math verbatim, engine never touches balances (§3). `cashOut` stays a direct callback (D4 is E5); `pickChest` calls the engine (pre-D4 immediate apply + synchronous dispatch, documented seam).
+- Suite now **50 tests green** (transition-sequence tests on a seeded engine per §20 risk 1: exact tick durations, event payload pins, D3 no-refire, bonus-waits-forever, pickChest rejection reporting). Lint improved to **10 errors + 6 warnings** (19 pre-existing prettier errors left with the deleted code; zero new findings); tsc clean; production build passes.
+
+Previous — Commit 4 (E3 — Engine skeleton), COMPLETE and approved (2026-07-18):
 
 - `GameEngine` facade (`src/engine/game-engine.ts`): simulation clock (`simTime`, tick-derived, §8) + fixed 60 Hz tick accumulator with `MAX_TICKS_PER_ADVANCE = 3` catch-up cap, excess dropped (§7). **Sanctioned delta D2 lands here** — fixed-step integration replaces display-rate variable dt; `RenderTime.animTime` now reads `engine.simTime` (§8: the accumulated clamped clock is precisely simTime). The multiplier stays on the wall clock (D1 is E4's delta); the tick-body structure is unchanged (D3 is E4's); no state machine, no command queue, no settlement change.
 - Typed `EventBus` (`src/engine/events.ts`, §12): queued emits, post-tick dispatch from `advance()`, listener-exception firewall, reentrant emits deferred to the next dispatch. The §12 event map shapes are finalized (payloads carry `roundId`); `EngineCommand` protocol shapes defined (`src/engine/commands.ts`, §13). Emitters land with their owners in E4/E5.
@@ -20,7 +27,7 @@ Previous — Commit 3 (E2 — Domain consolidation), COMPLETE and approved (2026
 - The depth-banded creature kind table + attribute rolls moved to `rollCreature` (`src/engine/domain/creatures.ts`) and are now pinned (`creatures.test.ts`), as recorded here in E1. All 26 E1 pins migrated with identical golden values; suite is now **35 tests, all green**.
 - Lint baseline is now **29 errors + 6 warnings** (E1's temporary `sampleJackpot` export warning removed with the move; 3 kind-table prettier errors left the component with the extracted code — new engine files are prettier-clean; the dissolved `abyss-game.ts` took 1 error with it). All remaining findings are pre-existing.
 
-Next (must not begin until E3 is approved): E4–E6 per `docs/06_ENGINE_ARCHITECTURE.md` §21, one commit each, approval between commits.
+Next (must not begin until E4 is approved): E5–E6 per `docs/06_ENGINE_ARCHITECTURE.md` §21, one commit each, approval between commits.
 
 Standing rules:
 
