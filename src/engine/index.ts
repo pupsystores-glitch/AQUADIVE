@@ -8,6 +8,9 @@
 // (sampleCrashPoint, sampleJackpot, rollBonusChests). Outcomes may only be
 // drawn through a RoundAuthority (§16).
 
+export { GameEngine, MAX_TICKS_PER_ADVANCE, TICK_SECONDS } from "./game-engine";
+export { EventBus, type EngineEventMap, type EngineStateName } from "./events";
+export type { EngineCommand } from "./commands";
 export { createMathRandomRng, type Rng } from "./rng";
 export { multiplierAt, timeForMultiplier } from "./domain/multiplier";
 export { descentSpeed } from "./domain/descent";

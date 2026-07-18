@@ -29,6 +29,17 @@ Done — E2 (domain consolidation): `domain/` pure modules moved verbatim —
 deliberately not exported — outcomes are drawn only through a
 RoundAuthority); `test/sequence-rng.ts` (deterministic Rng for tests).
 
-Next — E3: GameEngine facade, simulation clock + fixed-tick accumulator,
-event bus. E4: round state machine. E5: simulation systems + command queue.
-E6: EngineDriver + projections.
+Done — E3 (engine skeleton, sanctioned delta D2): `game-engine.ts` — the
+GameEngine facade owning the simulation clock (`simTime = tickCount ×
+TICK_SECONDS`, §8) and the fixed 60 Hz tick accumulator with the
+3-tick/advance catch-up cap (§7; excess dropped — tab switches resume,
+never fast-forward); `events.ts` — the typed EventBus (§12: queued emits,
+post-tick dispatch, listener-exception firewall, §12 event map shapes
+finalized) and `commands.ts` — the `EngineCommand` protocol shapes (§13).
+Emitters and the command queue land with their owners (E4/E5). The
+per-tick simulation body is still component-owned, injected via the
+temporary `deps.tick` seam (deleted in E5); the component rAF feeds
+wall-clock deltas into `advance()` until the EngineDriver lands (E6).
+
+Next — E4: round state machine (deltas D1, D3). E5: simulation systems +
+command queue (D4). E6: EngineDriver + projections + snapshots (D5).

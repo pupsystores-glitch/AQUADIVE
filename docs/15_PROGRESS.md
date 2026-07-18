@@ -16,13 +16,21 @@ Rules:
 
 Current Status:
 
-Sprint 3 (Game Engine, TASK 006) ACTIVE — Commits 1 (blueprint) and 2 (E1) approved; Commit 3 (E2, domain consolidation) delivered, awaiting approval before E3
+Sprint 3 (Game Engine, TASK 006) ACTIVE — Commits 1 (blueprint), 2 (E1) and 3 (E2) approved; Commit 4 (E3, engine skeleton) delivered, awaiting approval before E4
 
 Completed Tasks:
 
 ---
 
 ## TASK 006 — Sprint 3: Game Engine (In Progress)
+
+### Commit 4 — E3: Engine Skeleton (Clock + Fixed-Tick Accumulator + Event Bus)
+
+- Date: 2026-07-18
+- Summary: The engine owns time (docs/06 §21 step E3; **sanctioned delta D2 lands here** — the only behavior delta of this commit). `GameEngine` facade (`src/engine/game-engine.ts`): fixed 60 Hz simulation ticks (`TICK_SECONDS = 1/60`) consumed from a wall-clock accumulator; catch-up capped at `MAX_TICKS_PER_ADVANCE = 3` (= 0.05 s, the direct translation of the old per-frame `MAX_TICK_SECONDS` clamp) with excess dropped — after a tab switch the world resumes, never fast-forwards; simulation clock `simTime = tickCount × TICK_SECONDS` (§8), now the source of `RenderTime.animTime` (per §8 the accumulated clamped clock *is* simTime after extraction; `swayRef` deleted). Typed `EventBus` (`src/engine/events.ts`, §12): emits queue, dispatch after each completed tick from `advance()`, listener exceptions firewalled (caught + logged, remaining listeners run, §18), reentrant emits deferred to the next dispatch; the §12 event-map payload shapes are finalized (all carry `roundId`), with `EngineCommand` protocol shapes in `src/engine/commands.ts` (§13). No emitters fire yet — they land with their owners (state machine E4, systems/commands E5). Mid-migration seam per §20 risk 2: the per-tick simulation body stays component-owned, injected as `deps.tick` and run once per fixed tick with dt = 1/60; the component rAF now only feeds wall deltas into `engine.advance()` and renders once per frame with the latest state (§7: ticks and frames independent; §21 E3: "driven from the existing component rAF" — the EngineDriver proper lands in E6). Deliberately NOT landed, per scope: D1 (multiplier stays wall-clock — its read moved from the rAF timestamp to `performance.now()` inside the tick, same clock, sub-ms), D3 (tick-body structure untouched, no early exit), D4/D5, state machine, command queue, settlement changes.
+- Files modified: new — `src/engine/game-engine.ts`, `src/engine/events.ts`, `src/engine/commands.ts`, `src/engine/game-engine.test.ts`, `src/engine/events.test.ts`; modified — `src/engine/index.ts` (facade exports), `src/components/AbyssAnchor.tsx` (tick body → `stepSimulation` injected into `GameEngine`; rAF loop feeds `advance()`; `animTime: engine.simTime`; `swayRef` removed), `src/engine/README.md`, `docs/16_CURRENT_TASK.md`, `docs/15_PROGRESS.md`.
+- Architectural decisions: on hitting the catch-up cap the accumulator is cleared entirely (§7 "excess accumulated time is dropped" — most faithful to the old clamp, which had no accumulator at all); event dispatch runs after each completed tick (not once per advance) so listeners observe every consistent post-tick state; `EngineCommand`/`EngineStateName` defined as types now so the §12 event map is finalized with the bus (§12: "shapes finalized in the extraction commit that lands the bus") while their machinery stays in E4/E5; `frameDt` keeps the old per-frame clamp — it is the renderer's contract input (docs/05 §4), not a simulation input.
+- Risks: none open. Validation gate: `tsc --noEmit` clean; **45/45 tests green** (10 new: accumulator tick/cap/remainder semantics, determinism spot-check per §21 gate — identical advance sequences ⇒ identical tick traces — and EventBus order/unsubscribe/firewall/reentrancy); lint **unchanged at the 29+6 baseline** (zero new findings); production build passes; dev server smoke-tested (HTTP 200). One transient full-suite vitest worker crash was observed once and did not reproduce (passes repeatedly, also with `--no-file-parallelism`) — environment flake, not code. Manual gameplay pass: owner's review step.
 
 ### Commit 3 — E2: Domain Consolidation
 

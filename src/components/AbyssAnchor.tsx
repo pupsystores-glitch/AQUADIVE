@@ -11,6 +11,7 @@ import {
   CRASH_BANNER_MS,
   CREATURE_SPAWN_EVERY,
   DIVE_SPAWN_DEPTH_PX,
+  GameEngine,
   INITIAL_SPAWN_DEPTH_PX,
   LocalRoundAuthority,
   MAX_TICK_SECONDS,
@@ -71,7 +72,6 @@ export default function AbyssAnchor() {
   const nextCreatureId = useRef(1);
   const lastTsRef = useRef<number | null>(null);
   const boostRef = useRef(0);
-  const swayRef = useRef(0);
   const hasCashedRef = useRef(false);
   const participatingRef = useRef(false);
   const betRef = useRef(DEFAULT_BET);
@@ -188,7 +188,9 @@ export default function AbyssAnchor() {
     // Assemble the RenderState snapshot from refs only (never render-scope
     // variables — docs/05_RENDERING_ARCHITECTURE.md §20 risk 3) and hand it
     // to the SceneRenderer. The rAF loop stays here: the renderer never
-    // schedules itself (§17).
+    // schedules itself (§17). Since E3, `animTime` reads the engine's
+    // simulation clock (docs/06 §8: the accumulated clamped clock is
+    // precisely simTime after the fixed-tick extraction).
     const renderFrame = (frameDt: number) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -219,18 +221,21 @@ export default function AbyssAnchor() {
           crashed: phaseRef.current === "crashed",
           shipImpact,
         },
-        { animTime: swayRef.current, frameDt },
+        { animTime: engine.simTime, frameDt },
       );
     };
 
-    const tick = (ts: number) => {
-      const last = lastTsRef.current ?? ts;
-      const dt = Math.min(MAX_TICK_SECONDS, (ts - last) / 1000);
-      lastTsRef.current = ts;
-      swayRef.current += dt;
-
+    // E3 (docs/06 §7, §21): the GameEngine owns the simulation clock and
+    // consumes fixed 60 Hz ticks through its accumulator — sanctioned
+    // delta D2 (fixed-step integration replaces display-rate variable dt).
+    // This per-tick body stays component-owned until E4/E5 move the state
+    // machine and the systems into the engine (the mid-migration seam of
+    // docs/06 §20 risk 2).
+    const stepSimulation = (dt: number) => {
       if (phaseRef.current === "diving" && runRef.current) {
-        const elapsed = (ts - runRef.current.startedAt) / 1000;
+        // Wall-clock elapsed, unchanged: the multiplier moves to the
+        // simulation clock only with sanctioned delta D1 (E4).
+        const elapsed = (performance.now() - runRef.current.startedAt) / 1000;
         let m = multiplierAt(elapsed);
         // boost decays
         if (boostRef.current > 0) {
@@ -308,11 +313,23 @@ export default function AbyssAnchor() {
           }, SHIP_IMPACT_TO_CHESTS_MS);
         }
       }
-
-      renderFrame(dt);
-      rafRef.current = requestAnimationFrame(tick);
     };
-    rafRef.current = requestAnimationFrame(tick);
+
+    const engine = new GameEngine({ tick: stepSimulation });
+
+    // The rAF loop feeds wall-clock frame deltas into the engine and
+    // renders once per frame with the latest state (§7: ticks and frames
+    // are independent). frameDt keeps the previous clamp — it is the
+    // renderer's contract value (docs/05 §4), not a simulation input.
+    const frame = (ts: number) => {
+      const last = lastTsRef.current ?? ts;
+      const wallDt = (ts - last) / 1000;
+      lastTsRef.current = ts;
+      engine.advance(wallDt);
+      renderFrame(Math.min(MAX_TICK_SECONDS, wallDt));
+      rafRef.current = requestAnimationFrame(frame);
+    };
+    rafRef.current = requestAnimationFrame(frame);
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       lastTsRef.current = null;
