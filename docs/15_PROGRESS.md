@@ -24,6 +24,14 @@ Completed Tasks:
 
 ## TASK 006 — Sprint 3: Game Engine (In Progress)
 
+### Commit 8 — Bug Fix: Bet Basis Divergence (settlement locks the bet at acceptance)
+
+- Date: 2026-07-19
+- Summary: Approved fix for the exploit surfaced in the Sprint 3 closeout review. Root cause (pre-existing — verified in the pre-engine code, preserved verbatim through the extraction): the wallet debit used the amount at `placeBet`, but the settlement layer locked its win basis by re-reading the live bet input at `diveStarted`; since the input stays enabled during the locked countdown, raising it after betting moved the win basis above the debited amount. Fix, settlement layer only (§3): the round bet locks in the `betPlaced` listener from the event payload — the exact accepted amount the wallet is debited with, byte-identical to the engine's `participant.betAmount` locked at the accepting tick since E5 — and is never re-read from the input; it clears with the other per-round flags on return to betting. The potential-win display (shown only while participating in a dive) now derives from the same locked value via new `roundBet` state, so display and payout agree by construction; honest-play display is unchanged. No engine, RNG, economics, payout-formula, EventBus or other UI change.
+- Files modified: `src/components/AbyssAnchor.tsx` (betPlaced locks `roundBetRef`+`roundBet`; diveStarted re-read deleted; idle reset clears them; `potentialWin` uses the locked bet), `src/engine/state-machine.test.ts` (2 new characterization tests), docs 15/16.
+- Architectural decisions: the lock rides the `betPlaced` event payload rather than a facade read — settlement stays purely event-driven (§3), which is exactly the Phase 8 shape (the server's bet-accepted message carries the amount). The engine needed no change: it has held the authoritative locked amount since E5; the bug was settlement ignoring it.
+- Risks: none open. Validation: **83/83 tests green** (2 new: locked-amount immutability — later placeBet attempts rejected with the amount unchanged into the dive; settlement replay from event payloads alone proving debit and win share one basis, 5 in → 5 × m out, never 100 × m); tsc clean; lint at the 9+6 baseline (zero new findings); production build passes. One transient full-suite vitest worker crash reproduced the known environment flake (all files fail with no tests); passes repeatedly on re-run and with `--no-file-parallelism`. Manual gameplay pass: owner's review step.
+
 ### Commit 7 — E6: EngineDriver + Projections + Snapshots (D5) — extraction complete
 
 - Date: 2026-07-19

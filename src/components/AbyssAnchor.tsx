@@ -45,9 +45,14 @@ export default function AbyssAnchor() {
   const [cashFlash, setCashFlash] = useState(false);
   const [participating, setParticipating] = useState(false);
   const [countdown, setCountdown] = useState(BETTING_WINDOW_SECONDS);
+  // This round's locked bet, for display (potential win / CASH OUT label).
+  // Locked at betPlaced — the exact amount the wallet was debited with —
+  // so the shown potential always matches what settlement will pay.
+  const [roundBet, setRoundBet] = useState(0);
 
-  // Settlement-side bookkeeping (§3): the round's locked bet (0 when
-  // spectating), the jackpot base for chest delta credits, and the
+  // Settlement-side bookkeeping (§3): the round's locked bet (set at
+  // betPlaced from the accepted amount — never re-read from the bet input;
+  // 0 when spectating), the jackpot base for chest delta credits, and the
   // cashed-out flag the settlement listeners read synchronously.
   const roundBetRef = useRef(0);
   const hasCashedRef = useRef(false);
@@ -80,6 +85,8 @@ export default function AbyssAnchor() {
   useEffect(() => {
     if (phase !== "idle") return;
     setParticipating(false);
+    roundBetRef.current = 0; // no bet locked for the new round (yet)
+    setRoundBet(0);
     hasCashedRef.current = false;
     setHasCashed(false);
     setCashFlash(false);
@@ -97,11 +104,17 @@ export default function AbyssAnchor() {
     // (CASH/JACKPOT_FLASH_MS) stay here per §8.
     const subscriptions = [
       engine.events.on("betPlaced", ({ amount }) => {
+        // Bet basis lock (bug fix): the round bet is fixed HERE, at the
+        // accepted amount the wallet is debited with — the same value the
+        // engine locked into participant.betAmount. It is never re-read
+        // from the bet input, so changing the input during the locked
+        // countdown can no longer move the settlement basis.
+        roundBetRef.current = amount;
+        setRoundBet(amount);
         setBalance((prev) => +(prev - amount).toFixed(2));
         setParticipating(true);
       }),
       engine.events.on("diveStarted", () => {
-        roundBetRef.current = participatingRef.current ? betRef.current : 0;
         setChests(null);
         setChosenChest(null);
         hasCashedRef.current = false;
@@ -189,7 +202,9 @@ export default function AbyssAnchor() {
   const showBonus = phase === "bonus";
   const canBet = isIdle && !participating && bet > 0 && bet <= balance && countdown > 0.2;
 
-  const potentialWin = useMemo(() => +(bet * multiplier).toFixed(2), [bet, multiplier]);
+  // Displayed only while participating in a dive; based on the LOCKED bet
+  // (the settlement basis), not the live input — display and payout agree.
+  const potentialWin = useMemo(() => +(roundBet * multiplier).toFixed(2), [roundBet, multiplier]);
 
   return (
     <div className="relative mx-auto flex h-[100dvh] max-w-md flex-col overflow-hidden bg-background text-foreground">

@@ -317,6 +317,59 @@ describe("command queue — §13 validation at the applying tick (D4, §18 ring 
     expect(h.log.filter((e) => e.name === "chestPicked")).toHaveLength(1); // first pick stood
   });
 
+  it("bet basis lock (bug fix): the accepted amount is immutable for the round — later amounts are rejected", () => {
+    // The exploit this pins against: debit at placeBet, but settlement
+    // re-reading the (changeable) bet input at dive start. The engine locks
+    // participant.betAmount at the accepting tick; every later attempt to
+    // introduce a different amount is rejected, and the locked value rides
+    // unchanged into the dive — the settlement layer's only valid basis.
+    const h = makeHarness({ crashPoint: NEVER_CRASH });
+    h.engine.submit({ type: "placeBet", amount: 5 });
+    advanceTicks(h.engine, 1);
+    expect(h.engine.getPublicState().participant?.betAmount).toBe(5);
+
+    h.engine.submit({ type: "placeBet", amount: 100 }); // "raised the input" while locked
+    advanceTicks(h.engine, 1);
+    advanceTicks(h.engine, BETTING_TICKS - 2); // → diving
+    expect(h.engine.state).toBe("diving");
+    h.engine.submit({ type: "placeBet", amount: 100 }); // and again mid-dive
+    advanceTicks(h.engine, 1);
+
+    expect(
+      h.log
+        .filter((e) => e.name === "commandRejected")
+        .map((e) => (e.payload as { reason: string }).reason),
+    ).toEqual(["already-participating", "not-in-betting"]);
+    expect(h.engine.getPublicState().participant?.betAmount).toBe(5); // still the debited amount
+  });
+
+  it("bet basis lock (bug fix): settlement is derivable from event payloads alone — debit and win share one basis", () => {
+    // Replays the wallet exactly as the UI shell wires it after the fix
+    // (§3): the round bet is the betPlaced amount. No other bet value
+    // exists anywhere in the event stream, so the win basis cannot diverge
+    // from the debited amount by construction.
+    const h = makeHarness({ crashPoint: NEVER_CRASH });
+    let balance = 1000;
+    let roundBet = 0;
+    h.engine.events.on("betPlaced", ({ amount }) => {
+      roundBet = amount; // locked at acceptance — the fix's contract
+      balance = +(balance - amount).toFixed(2);
+    });
+    h.engine.events.on("cashedOut", ({ multiplier }) => {
+      balance = +(balance + +(roundBet * multiplier).toFixed(2)).toFixed(2);
+    });
+
+    h.engine.submit({ type: "placeBet", amount: 5 });
+    advanceTicks(h.engine, BETTING_TICKS); // bet applied; → diving
+    advanceTicks(h.engine, 10);
+    const m = h.engine.getPublicState().multiplier; // tick-authoritative cashout value (D4)
+    h.engine.submit({ type: "cashOut" });
+    advanceTicks(h.engine, 1);
+
+    const expected = +(+(1000 - 5).toFixed(2) + +(5 * m).toFixed(2)).toFixed(2);
+    expect(balance).toBe(expected); // 5 in, 5 × m out — never 100 × m
+  });
+
   it("clears the participant at entry(betting): a new bet is accepted next round", () => {
     const h = makeHarness({ crashPoint: 1 });
     h.engine.submit({ type: "placeBet", amount: 25 });
