@@ -16,9 +16,21 @@ Rules:
 
 Current Status:
 
-Sprint 2 (Rendering Architecture, TASK 005) COMPLETED — close-out awaiting approval. No implementation task active; next: Sprint 3 (Phase 5, Game Engine) after approval
+Sprint 3 (Game Engine, TASK 006) ACTIVE — Commit 1 (engine architecture blueprint) delivered, awaiting approval before E1
 
 Completed Tasks:
+
+---
+
+## TASK 006 — Sprint 3: Game Engine (In Progress)
+
+### Commit 1 — Engine Architecture Planning (documentation only)
+
+- Date: 2026-07-18
+- Summary: `docs/06_ENGINE_ARCHITECTURE.md` created — the complete Game Engine architecture blueprint (21 sections): engine responsibilities and boundaries (money, wallet, UI, rendering, network all outside), complete round state machine (betting/diving/crashed/impact/bonus with the renderer `Phase` projection map), round lifecycle with the authoritative per-tick pipeline order, fixed 60 Hz tick model with accumulator and preserved catch-up cap, three-clock time management (wall clock confined to the driver), simulation system decomposition (multiplier/descent/spawner/collision/boost, all formulas verbatim), flat entity management (no ECS), RNG boundary (injected `Rng`, outcome vs. world streams; finding recorded: every engine draw is outcome-relevant because goldfish boost affects payout), edge-triggered typed event map, `GameEngine` facade + `EngineDriver` public API with tick-boundary command queue, snapshot model with authority/public secrecy classes, renderer contract obligations (RenderState byte-compatible), backend contract via the `RoundAuthority` seam (local now, remote in Phase 8 — engine core mode-blind), multiplayer readiness, three-ring error handling (validate/assert/firewall; fail-safe = stop), scalability stance, risks/non-goals, and the E0–E6 extraction order with a per-commit validation gate. No code modified.
+- Files modified: `docs/06_ENGINE_ARCHITECTURE.md` (new), `docs/14_TASKS.md`, `docs/15_PROGRESS.md`, `docs/16_CURRENT_TASK.md` (tracking updates).
+- Architectural decisions: deterministic fixed-tick simulation on a single engine-owned clock; authority-swappable outcome module (`RoundAuthority`) + injected RNG as the entire Phase 8 seam; commands as queued typed objects that are also the future protocol messages; money kept out of the engine entirely (settlement listener at the event edge); engine lifetime decoupled from React; five sanctioned behavior deltas (D1–D5, §7.1) enumerated as the only permitted differences — ratified by approving the document; `sampleJackpot` micro-task recorded as superseded (destination is now `RoundAuthority`, pending owner sign-off).
+- Risks: none to the running game (docs only). Open approval items: vitest devDependency for E1; D1–D5 ratification; `sampleJackpot` fold-in.
 
 ---
 
