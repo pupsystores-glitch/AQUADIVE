@@ -5,7 +5,8 @@
 // X is untransformed by design; the camera stays vertical-only until a
 // feature demands otherwise.
 
-import { ANCHOR_SCREEN_Y_FRAC, ANCHOR_WORLD_OFFSET_PX } from "@/game/constants";
+import { ANCHOR_WORLD_OFFSET_PX } from "@/shared/world";
+import { ANCHOR_SCREEN_Y_FRAC } from "./constants";
 
 export class Camera {
   private followY = 0;

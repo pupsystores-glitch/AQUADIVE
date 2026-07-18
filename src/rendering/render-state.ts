@@ -5,18 +5,28 @@
 // RenderState snapshot plus a RenderTime and produces pixels. It never
 // mutates game state, never computes outcomes, never knows money exists.
 //
-// Domain types (`Phase`, `Creature`) are type-only imports from
-// src/lib/abyss-game until the engine extraction relocates them
-// (§18 correction convention, as recorded during R1).
+// This module OWNS the contract types (Sprint 3, Commit E2, resolving the
+// R1 relocation note): `Phase` and `RenderCreature` are defined here, and
+// the engine's domain types conform to them — the one sanctioned type-only
+// import direction points engine → rendering (docs/06 §4), never the
+// reverse.
 
-import type { Creature, Phase } from "@/lib/abyss-game";
+import type { CreatureKind } from "@/shared/creatures";
 import type { Camera } from "./camera";
 
+/** Renderer phase strings — engine states map onto these via a fixed projection (docs/06 §5). */
+export type Phase = "idle" | "diving" | "cashed" | "crashed" | "bonus";
+
 /** The subset of a creature the renderer is allowed to see (§10). */
-export type RenderCreature = Pick<
-  Creature,
-  "kind" | "x" | "worldY" | "size" | "phase" | "dir" | "consumed"
->;
+export interface RenderCreature {
+  kind: CreatureKind;
+  x: number; // 0..1 horizontal position
+  worldY: number; // absolute depth (pixels in world space)
+  size: number;
+  phase: number; // anim offset
+  dir: 1 | -1;
+  consumed?: boolean;
+}
 
 /** Per-frame scene snapshot — produced by the caller (component now, engine after Phase 5). */
 export interface RenderState {

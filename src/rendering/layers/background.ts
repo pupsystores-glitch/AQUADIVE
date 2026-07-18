@@ -2,8 +2,8 @@
 // docs/05_RENDERING_ARCHITECTURE.md §5 layer 1, §11). Body moved verbatim
 // from the component's drawScene; `depthRatio` now arrives in RenderState.
 
-import { BG_BOTTOM_ABYSS, BG_BOTTOM_SURFACE, BG_TOP_ABYSS, BG_TOP_SURFACE } from "@/game/constants";
 import { lerpColor } from "@/shared/utils/color";
+import { BG_BOTTOM_ABYSS, BG_BOTTOM_SURFACE, BG_TOP_ABYSS, BG_TOP_SURFACE } from "../theme";
 import type { RenderLayer } from "../render-state";
 
 export const backgroundLayer: RenderLayer = {

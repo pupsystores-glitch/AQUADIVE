@@ -7,8 +7,7 @@
 // (§18 correction, R3). Per §12 this layer is exempt from the no-RNG rule
 // (jitter inside drawShipImpact).
 
-import { ANCHOR_DRAW_H } from "@/game/config";
-import { SHIP_IMPACT_FX_SECONDS } from "@/game/constants";
+import { ANCHOR_DRAW_H, SHIP_IMPACT_FX_SECONDS } from "../constants";
 import { drawShipImpact } from "../draw/impact-fx";
 import type { RenderLayer } from "../render-state";
 import { anchorPinY, anchorSwayX } from "./actor";

@@ -10,8 +10,8 @@
 // the caller forwards CSS size + devicePixelRatio each frame, preserving
 // the previous per-frame resize check exactly.
 
-import { MAX_DPR } from "@/game/constants";
 import { Camera } from "./camera";
+import { MAX_DPR } from "./constants";
 import { actorLayer } from "./layers/actor";
 import { backgroundLayer } from "./layers/background";
 import { effectsLayer } from "./layers/effects";
@@ -21,7 +21,11 @@ import type { RenderLayer, RenderState, RenderTime } from "./render-state";
 
 // The component may only import from this module (§18); the contract types
 // are re-exported here so callers never reach into src/rendering internals.
-export type { RenderCreature, RenderState, RenderTime } from "./render-state";
+// SHIP_IMPACT_FX_SECONDS rides along for the caller-side half of the FX
+// timing handoff (R5): the caller stops reporting `shipImpact` once the FX
+// lifetime has elapsed.
+export type { Phase, RenderCreature, RenderState, RenderTime } from "./render-state";
+export { SHIP_IMPACT_FX_SECONDS } from "./constants";
 
 // Dev-only frame-time meter (§14 item 8, landed in R5). The wall-clock read
 // below is the single sanctioned exemption from the §4 no-clock rule

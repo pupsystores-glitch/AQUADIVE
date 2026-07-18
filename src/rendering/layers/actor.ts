@@ -9,8 +9,8 @@
 // Effects layer can anchor impact FX to the swaying anchor without
 // duplicating the formula (§18 correction, R3).
 
-import { ANCHOR_DRAW_H, ANCHOR_RING_Y_FRAC } from "@/game/config";
-import { ANCHOR_SCREEN_Y_FRAC, SHIP_WORLD_Y } from "@/game/constants";
+import { SHIP_WORLD_Y } from "@/shared/world";
+import { ANCHOR_DRAW_H, ANCHOR_RING_Y_FRAC, ANCHOR_SCREEN_Y_FRAC } from "../constants";
 import { assets } from "../assets";
 import { drawAnchor } from "../draw/anchor";
 import { drawChain } from "../draw/chain";

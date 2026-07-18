@@ -39,3 +39,12 @@ R1–R5 complete — the rendering architecture of
 `docs/05_RENDERING_ARCHITECTURE.md` is fully implemented. The game
 component now contains simulation + UI only; Phase 5 (engine extraction)
 can proceed against this stable rendering API.
+
+Sprint 3 E2 (docs/06 §4 constants ownership): presentation constants now
+live here — `constants.ts` (`MAX_DPR`, `ANCHOR_SCREEN_Y_FRAC`,
+`ANCHOR_DRAW_H`, `ANCHOR_RING_Y_FRAC`, `SHIP_IMPACT_FX_SECONDS`) and the
+`BG_*` background palette in `theme.ts`. `render-state.ts` now owns the
+contract types outright: `Phase` and `RenderCreature` (with `CreatureKind`
+from `src/shared/creatures.ts`) are defined here, and the engine's domain
+types conform to them — the sanctioned type-only import direction is
+engine → rendering (docs/06 §4), never the reverse.

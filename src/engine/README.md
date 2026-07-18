@@ -16,7 +16,19 @@ event bus that other systems subscribe to.
 - No network calls — round events arrive through the service interface in
   `src/network`.
 
-## Planned contents (per the approved refactoring plan)
+## Contents (per docs/06_ENGINE_ARCHITECTURE.md §21)
 
-Game loop (Step 3.2), world simulation (Step 3.1), round engine (Step 3.3),
-event bus (Step 4.1), round state machine (Step 4.2), stores (Step 4.3).
+Done — E2 (domain consolidation): `domain/` pure modules moved verbatim —
+`multiplier.ts` (growth curve + inverse), `descent.ts` (descent speed),
+`outcomes.ts` (crash/jackpot/chest distributions over an injected Rng),
+`creatures.ts` (Creature data + depth-banded spawn tables), `tuning.ts`
+(gameplay/simulation constants, the future EngineConfig surface);
+`rng.ts` (Rng service, §11 — the only Math.random site in the engine);
+`round-authority.ts` (RoundAuthority seam + LocalRoundAuthority, §16);
+`index.ts` (the public surface until the E3 facade; outcome distributions
+deliberately not exported — outcomes are drawn only through a
+RoundAuthority); `test/sequence-rng.ts` (deterministic Rng for tests).
+
+Next — E3: GameEngine facade, simulation clock + fixed-tick accumulator,
+event bus. E4: round state machine. E5: simulation systems + command queue.
+E6: EngineDriver + projections.

@@ -122,3 +122,20 @@ export const IMPACT_FX_THEME = {
   sparkle: (alpha: number) => `rgba(255, 220, 240, ${alpha})`,
   ring: (alpha: number) => `rgba(255, 120, 210, ${alpha})`,
 } as const;
+
+// ----- Scene background palette (layers/background.ts; RGB triplets for lerpColor) -----
+// Moved from src/game/constants.ts in Sprint 3, Commit E2 (docs/06 §4:
+// presentation constants live under src/rendering; colors belong here, the
+// white-label boundary). Values byte-identical.
+
+/** Gradient top color near the surface. */
+export const BG_TOP_SURFACE: number[] = [60, 130, 165];
+
+/** Gradient top color in the abyss. */
+export const BG_TOP_ABYSS: number[] = [8, 18, 40];
+
+/** Gradient bottom color near the surface. */
+export const BG_BOTTOM_SURFACE: number[] = [14, 40, 80];
+
+/** Gradient bottom color in the abyss. */
+export const BG_BOTTOM_ABYSS: number[] = [2, 6, 18];

@@ -16,13 +16,21 @@ Rules:
 
 Current Status:
 
-Sprint 3 (Game Engine, TASK 006) ACTIVE — Commit 1 approved (D1–D5 ratified); Commit 2 (E1, test harness + characterization tests) delivered, awaiting approval before E2
+Sprint 3 (Game Engine, TASK 006) ACTIVE — Commits 1 (blueprint) and 2 (E1) approved; Commit 3 (E2, domain consolidation) delivered, awaiting approval before E3
 
 Completed Tasks:
 
 ---
 
 ## TASK 006 — Sprint 3: Game Engine (In Progress)
+
+### Commit 3 — E2: Domain Consolidation
+
+- Date: 2026-07-18
+- Summary: The engine's domain layer exists (docs/06 §21 step E2), all formulas/tables/constants moved verbatim (§9), all 26 E1 pins migrated with identical golden values, suite now 35 tests green. (1) Pure math → `src/engine/domain/`: `multiplier.ts` (`multiplierAt`, `timeForMultiplier`), `descent.ts` (`descentSpeed`), `outcomes.ts` (`sampleCrashPoint`, `sampleJackpot`, `rollBonusChests` as pure functions over an injected `Rng`, incl. the pinned TASK 001 flaws), `creatures.ts` (`Creature` + `rollCreature` — the depth-banded kind table and attribute rolls extracted from the component's `spawnCreature` closure and now pinned by new characterization tests, six draws in the original order), `tuning.ts` (gameplay/simulation constants — the future `EngineConfig` surface). (2) `Rng` service (`src/engine/rng.ts`, §11): `Math.random` appears in the engine only inside `createMathRandomRng`; `outcome` and `world` streams are separate instances. (3) `RoundAuthority` seam (`src/engine/round-authority.ts`, §16): `LocalRoundAuthority` binds the outcome distributions to the injected outcome stream; the deferred `sampleJackpot` micro-task folded in per §20 risk 5 with owner sign-off. (4) §4 constants ownership resolved: presentation scalars → `src/rendering/constants.ts`, `BG_*` palette → `src/rendering/theme.ts`, world geometry → `src/shared/world.ts`, `CreatureKind` → `src/shared/creatures.ts`; `src/game/` keeps only UI-shell values, `formatMultiplier`/`chainTier` → `src/game/presentation.ts` (no user-facing strings in the engine, §3); `src/lib/abyss-game.ts` dissolved. (5) Contract types: `Phase`/`RenderCreature` now defined in `src/rendering/render-state.ts` (resolving the R1 relocation note); engine domain types conform to them, keeping the type-import direction engine → rendering (§4). Component: outcome draws go through `roundAuthority`, world draws through `worldRng` (module-scope until E3 injects them), `spawnCreature` closure deleted, temporary `sampleJackpot` export deleted. Zero behavior change — no sanctioned delta lands in E2.
+- Files modified: new — `src/engine/{rng,round-authority,index}.ts`, `src/engine/domain/{multiplier,descent,outcomes,creatures,tuning}.ts` (+ 6 engine test files incl. `test/sequence-rng.ts`), `src/shared/{world,creatures}.ts` (+ test), `src/rendering/constants.ts` (+ test), `src/game/presentation.ts` (+ test); modified — `AbyssAnchor.tsx`, `render-state.ts`, `scene-renderer.ts`, `camera.ts`, `theme.ts`, 4 layer/draw modules, `src/game/{config,constants,types}.ts` (+ their tests), 3 READMEs; deleted — `src/lib/abyss-game.ts` (+ test), `src/components/AbyssAnchor.test.ts`.
+- Architectural decisions: `src/engine/index.ts` is the engine's public surface until the E3 facade, and deliberately does not export the outcome distributions — outcomes are drawn only through a `RoundAuthority`; `CreatureKind` sits on the shared floor (protocol-shaped, needed by both sides) rather than in either layer; the component's spawn-jitter draw uses the `world` stream for draw discipline; UI flash timings stay in the shell per §8.
+- Risks: none open. Validation gate: `tsc --noEmit` clean; 35/35 tests green; production build succeeds; dev server serves the game; lint baseline improved 33+7 → **29+6** (moved/dissolved code took 4 pre-existing prettier errors and E1's temporary export warning with it; new files are clean — no new findings). Manual gameplay pass: owner's review step.
 
 ### Commit 2 — E1: Test Harness + Characterization Tests
 

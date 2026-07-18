@@ -6,8 +6,7 @@
 // visibly lands on top). The ship's formerly-inline world position (−180)
 // is now the named constant SHIP_WORLD_Y (§8).
 
-import { CHAIN_MAX_DEPTH } from "@/game/config";
-import { ANCHOR_WORLD_OFFSET_PX, SHIP_WORLD_Y } from "@/game/constants";
+import { ANCHOR_WORLD_OFFSET_PX, CHAIN_MAX_DEPTH, SHIP_WORLD_Y } from "@/shared/world";
 import { drawCreature } from "../draw/creatures";
 import { drawSeaFloor } from "../draw/sea-floor";
 import { drawShip } from "../draw/ship";

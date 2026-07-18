@@ -2,7 +2,7 @@
 // (Sprint 2, Commit R1). Colors reference theme tokens with byte-identical
 // values; geometry and animation math are unchanged.
 
-import type { CreatureKind } from "@/lib/abyss-game";
+import type { CreatureKind } from "@/shared/creatures";
 import { CREATURE_THEME } from "../theme";
 
 export function drawCreature(

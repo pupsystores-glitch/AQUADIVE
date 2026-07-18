@@ -1,49 +1,48 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  type BonusChest,
-  type Creature,
-  type CreatureKind,
-  chainTier,
-  descentSpeed,
-  formatMultiplier,
-  multiplierAt,
-  rollBonusChests,
-  sampleCrashPoint,
-  timeForMultiplier,
-  type Phase,
-} from "@/lib/abyss-game";
-import {
   BETTING_WINDOW_SECONDS,
-  CASH_FLASH_MS,
-  CHAIN_MAX_DEPTH,
+  BOOST_DECAY_PER_SECOND,
+  BOOST_GAIN_PER_GOLDFISH,
+  BOOST_MULTIPLIER_BONUS,
+  BOOST_SPEED_FACTOR,
   CHEST_RESULT_TO_IDLE_MS,
   COLLISION_DX_FRAC,
   COLLISION_DY_PX,
   CRASH_BANNER_MS,
   CREATURE_SPAWN_EVERY,
-  HISTORY_LIMIT,
-  JACKPOT_FLASH_MS,
-  QUICK_BETS,
-  SHIP_IMPACT_TO_CHESTS_MS,
-} from "@/game/config";
-import {
-  ANCHOR_WORLD_OFFSET_PX,
-  BOOST_DECAY_PER_SECOND,
-  BOOST_GAIN_PER_GOLDFISH,
-  BOOST_MULTIPLIER_BONUS,
-  BOOST_SPEED_FACTOR,
-  COUNTDOWN_TICK_MS,
-  DEFAULT_BALANCE,
-  DEFAULT_BET,
   DIVE_SPAWN_DEPTH_PX,
   INITIAL_SPAWN_DEPTH_PX,
+  LocalRoundAuthority,
   MAX_TICK_SECONDS,
-  SHIP_IMPACT_FX_SECONDS,
+  SHIP_IMPACT_TO_CHESTS_MS,
   SPAWN_AHEAD_PX,
   SPAWN_JITTER_PX,
-} from "@/game/constants";
+  createMathRandomRng,
+  descentSpeed,
+  multiplierAt,
+  rollCreature,
+  type BonusChest,
+  type Creature,
+  type RoundAuthority,
+} from "@/engine";
+import { CASH_FLASH_MS, HISTORY_LIMIT, JACKPOT_FLASH_MS, QUICK_BETS } from "@/game/config";
+import { COUNTDOWN_TICK_MS, DEFAULT_BALANCE, DEFAULT_BET } from "@/game/constants";
+import { chainTier, formatMultiplier } from "@/game/presentation";
 import type { HistoryEntry, LastWin, RunState } from "@/game/types";
-import { SceneRenderer, type RenderState } from "@/rendering/scene-renderer";
+import {
+  SHIP_IMPACT_FX_SECONDS,
+  SceneRenderer,
+  type Phase,
+  type RenderState,
+} from "@/rendering/scene-renderer";
+import { ANCHOR_WORLD_OFFSET_PX, CHAIN_MAX_DEPTH } from "@/shared/world";
+
+// E2 seam (docs/06_ENGINE_ARCHITECTURE.md §11, §16): outcome draws go
+// through the RoundAuthority; world draws (creature rolls, spawn jitter) go
+// through the `world` Rng stream. Both are constructed here only until E3,
+// when the GameEngine facade takes them as injected dependencies.
+const worldRng = createMathRandomRng();
+const roundAuthority: RoundAuthority = new LocalRoundAuthority(createMathRandomRng());
 
 export default function AbyssAnchor() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -83,31 +82,6 @@ export default function AbyssAnchor() {
   useEffect(() => { participatingRef.current = participating; }, [participating]);
   useEffect(() => { betRef.current = bet; }, [bet]);
 
-  // ----- creature spawning -----
-  const spawnCreature = useCallback((worldY: number) => {
-    const depthRatio = Math.min(1, worldY / CHAIN_MAX_DEPTH);
-    // pick kind based on depth
-    const r = Math.random();
-    let kind: CreatureKind;
-    if (depthRatio < 0.25) {
-      kind = r < 0.35 ? "fishSchool" : r < 0.55 ? "seahorse" : r < 0.72 ? "jellyfish" : r < 0.88 ? "kelp" : r < 0.96 ? "fishSchool" : "goldfish";
-    } else if (depthRatio < 0.6) {
-      kind = r < 0.25 ? "fishSchool" : r < 0.45 ? "octopus" : r < 0.6 ? "jellyfish" : r < 0.75 ? "manta" : r < 0.88 ? "sealion" : r < 0.96 ? "kelp" : "goldfish";
-    } else {
-      kind = r < 0.2 ? "octopus" : r < 0.4 ? "sealion" : r < 0.62 ? "whale" : r < 0.78 ? "anglerfish" : r < 0.9 ? "manta" : r < 0.96 ? "jellyfish" : "goldfish";
-    }
-    const c: Creature = {
-      id: nextCreatureId.current++,
-      kind,
-      x: 0.1 + Math.random() * 0.8,
-      worldY: worldY + 200 + Math.random() * 80,
-      size: 0.8 + Math.random() * 0.6,
-      phase: Math.random() * Math.PI * 2,
-      dir: Math.random() < 0.5 ? 1 : -1,
-    };
-    creaturesRef.current.push(c);
-  }, []);
-
   // ----- place a bet during the betting window -----
   const placeBet = useCallback(() => {
     if (phaseRef.current !== "idle") return;
@@ -124,7 +98,7 @@ export default function AbyssAnchor() {
     const participated = participatingRef.current;
     runRef.current = {
       startedAt: performance.now(),
-      crashAt: sampleCrashPoint(),
+      crashAt: roundAuthority.sampleCrashPoint(),
       bet: participated ? betRef.current : 0,
       bonusTriggered: false,
     };
@@ -284,10 +258,12 @@ export default function AbyssAnchor() {
         const speed = descentSpeed(m) * (1 + boostRef.current * BOOST_SPEED_FACTOR);
         worldYRef.current += speed * dt;
 
-        // spawn creatures
+        // spawn creatures (world-stream draws, docs/06 §11)
         while (worldYRef.current + SPAWN_AHEAD_PX > nextSpawnAtRef.current) {
-          spawnCreature(nextSpawnAtRef.current);
-          nextSpawnAtRef.current += CREATURE_SPAWN_EVERY - Math.random() * SPAWN_JITTER_PX;
+          creaturesRef.current.push(
+            rollCreature(nextSpawnAtRef.current, nextCreatureId.current++, worldRng),
+          );
+          nextSpawnAtRef.current += CREATURE_SPAWN_EVERY - worldRng.next() * SPAWN_JITTER_PX;
         }
 
         // collision with goldfish → boost
@@ -307,7 +283,7 @@ export default function AbyssAnchor() {
         // Reaching the sea floor → SHIP IMPACT → JACKPOT + chest bonus.
         if (!runRef.current.bonusTriggered && worldYRef.current >= CHAIN_MAX_DEPTH) {
           runRef.current.bonusTriggered = true;
-          const jackpot = sampleJackpot();
+          const jackpot = roundAuthority.sampleJackpot();
           jackpotMultRef.current = jackpot;
           shipImpactRef.current = performance.now();
           setMultiplier(jackpot);
@@ -325,7 +301,7 @@ export default function AbyssAnchor() {
           setPhase("cashed");
           setTimeout(() => {
             if (phaseRef.current === "cashed" || phaseRef.current === "diving") {
-              setChests(rollBonusChests());
+              setChests(roundAuthority.rollBonusChests());
               setChosenChest(null);
               setPhase("bonus");
             }
@@ -343,7 +319,7 @@ export default function AbyssAnchor() {
       rendererRef.current?.dispose();
       rendererRef.current = null;
     };
-  }, [spawnCreature]);
+  }, []);
 
   // ----- UI -----
   const inDive = phase === "diving";
@@ -557,21 +533,8 @@ export default function AbyssAnchor() {
 }
 
 // ============================================================
-// Canvas drawing helpers
+// Icon components
 // ============================================================
-
-// Jackpot multiplier when the anchor reaches the sea floor.
-// Weighted: 50% → 50–100×, 35% → 100–200×, 15% → 200–500×.
-// Exported only so the E1 characterization tests can pin the distribution
-// before E2 moves it into the engine's RoundAuthority (docs/06 §20 risk 5).
-export function sampleJackpot(): number {
-  const r = Math.random();
-  let m: number;
-  if (r < 0.5) m = 50 + Math.random() * 50;
-  else if (r < 0.85) m = 100 + Math.random() * 100;
-  else m = 200 + Math.random() * 300;
-  return +m.toFixed(2);
-}
 
 function AnchorIcon({ className }: { className?: string }) {
   return (
