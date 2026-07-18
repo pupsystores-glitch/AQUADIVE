@@ -1,9 +1,11 @@
 // Tests for the engine's fixed-tick accumulator (docs/06 §7, sanctioned
-// delta D2) and the post-tick event dispatch hook (§12). Transition
-// behavior of the round state machine is covered in state-machine.test.ts.
+// delta D2) and the facade's command/event edges (§12, §13; delta D4 —
+// commands apply at the next tick boundary). Transition and command
+// *validation* behavior is covered in state-machine.test.ts; the diving
+// pipeline itself in simulation.test.ts.
 import { describe, expect, it } from "vitest";
 import { MAX_TICKS_PER_ADVANCE, TICK_SECONDS } from "./clock";
-import { GameEngine, type GameEngineDeps } from "./game-engine";
+import { GameEngine } from "./game-engine";
 import type { RoundAuthority } from "./round-authority";
 
 const stubAuthority = (): RoundAuthority => ({
@@ -16,8 +18,8 @@ const stubAuthority = (): RoundAuthority => ({
   ],
 });
 
-const makeEngine = (divingTick: GameEngineDeps["divingTick"] = () => {}) =>
-  new GameEngine({ authority: stubAuthority(), divingTick });
+const makeEngine = () =>
+  new GameEngine({ authority: stubAuthority(), worldRng: { next: () => 0.5 } });
 
 describe("GameEngine.advance — fixed 60 Hz tick accumulator (§7)", () => {
   it("consumes whole ticks with dt = TICK_SECONDS and carries the sub-tick remainder", () => {
@@ -60,9 +62,10 @@ describe("GameEngine.advance — fixed 60 Hz tick accumulator (§7)", () => {
     expect(engine.state).toBe("betting");
   });
 
-  it("is deterministic: identical advance sequences produce identical clocks and state", () => {
+  it("is deterministic: identical advance + command sequences produce identical state (§7)", () => {
     const run = () => {
       const engine = makeEngine();
+      engine.submit({ type: "placeBet", amount: 10 });
       for (const dt of [0.007, 0.021, 0.0166, 0.05, 0.001, 0.0333, 1.7, 0.016]) {
         engine.advance(dt);
       }
@@ -71,9 +74,45 @@ describe("GameEngine.advance — fixed 60 Hz tick accumulator (§7)", () => {
         simTime: engine.simTime,
         state: engine.state,
         countdown: engine.countdown,
+        worldY: engine.worldY,
+        multiplier: engine.multiplier,
+        creatures: engine.creatures.length,
       };
     };
     expect(run()).toEqual(run());
+  });
+});
+
+describe("GameEngine — command queue at the tick boundary (§13, D4)", () => {
+  it("applies a submitted command only when a tick is consumed, never at submit time", () => {
+    const seen: number[] = [];
+    const engine = makeEngine();
+    engine.events.on("betPlaced", ({ amount }) => seen.push(amount));
+
+    engine.submit({ type: "placeBet", amount: 25 });
+    expect(seen).toEqual([]); // queued, not applied
+
+    engine.advance(0.008); // sub-tick: no boundary crossed, still queued
+    expect(seen).toEqual([]);
+
+    engine.advance(0.009); // one tick consumed → applied + dispatched
+    expect(seen).toEqual([25]);
+  });
+
+  it("defers commands submitted by event listeners to the next tick (§12: no reentrancy)", () => {
+    const engine = makeEngine();
+    const rejected: string[] = [];
+    engine.events.on("betPlaced", () => {
+      engine.submit({ type: "placeBet", amount: 99 }); // reentrant submit
+    });
+    engine.events.on("commandRejected", ({ reason }) => rejected.push(reason));
+
+    engine.submit({ type: "placeBet", amount: 25 });
+    engine.advance(TICK_SECONDS); // applies the bet; listener queues another
+    expect(rejected).toEqual([]); // not applied in the same tick
+
+    engine.advance(TICK_SECONDS); // next boundary: applied → rejected
+    expect(rejected).toEqual(["already-participating"]);
   });
 });
 

@@ -1,28 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BETTING_WINDOW_SECONDS,
-  BOOST_DECAY_PER_SECOND,
-  BOOST_GAIN_PER_GOLDFISH,
-  BOOST_MULTIPLIER_BONUS,
-  BOOST_SPEED_FACTOR,
-  COLLISION_DX_FRAC,
-  COLLISION_DY_PX,
-  CREATURE_SPAWN_EVERY,
-  DIVE_SPAWN_DEPTH_PX,
   ENGINE_STATE_TO_PHASE,
   GameEngine,
-  INITIAL_SPAWN_DEPTH_PX,
   LocalRoundAuthority,
   MAX_TICK_SECONDS,
-  SPAWN_AHEAD_PX,
-  SPAWN_JITTER_PX,
   createMathRandomRng,
-  descentSpeed,
-  multiplierAt,
-  rollCreature,
   type BonusChest,
-  type Creature,
-  type DivingTickOutcome,
   type RoundAuthority,
 } from "@/engine";
 import { CASH_FLASH_MS, HISTORY_LIMIT, JACKPOT_FLASH_MS, QUICK_BETS } from "@/game/config";
@@ -35,12 +19,11 @@ import {
   type Phase,
   type RenderState,
 } from "@/rendering/scene-renderer";
-import { ANCHOR_WORLD_OFFSET_PX, CHAIN_MAX_DEPTH } from "@/shared/world";
+import { CHAIN_MAX_DEPTH } from "@/shared/world";
 
-// E2 seam (docs/06_ENGINE_ARCHITECTURE.md §11, §16): outcome draws go
-// through the RoundAuthority; world draws (creature rolls, spawn jitter) go
-// through the `world` Rng stream. Both are constructed here only until E3,
-// when the GameEngine facade takes them as injected dependencies.
+// The two engine RNG streams (docs/06_ENGINE_ARCHITECTURE.md §11, §16):
+// outcome draws go through the RoundAuthority; world draws (creature rolls,
+// spawn jitter) through the `world` Rng stream injected into the engine.
 const worldRng = createMathRandomRng();
 const roundAuthority: RoundAuthority = new LocalRoundAuthority(createMathRandomRng());
 
@@ -66,12 +49,7 @@ export default function AbyssAnchor() {
 
   const roundBetRef = useRef(0); // this round's locked bet (0 when spectating) — settlement-side (§3)
   const phaseRef = useRef<Phase>("idle");
-  const worldYRef = useRef(0); // anchor's depth in world px
-  const creaturesRef = useRef<Creature[]>([]);
-  const nextSpawnAtRef = useRef(INITIAL_SPAWN_DEPTH_PX);
-  const nextCreatureId = useRef(1);
   const lastTsRef = useRef<number | null>(null);
-  const boostRef = useRef(0);
   const hasCashedRef = useRef(false);
   const participatingRef = useRef(false);
   const betRef = useRef(DEFAULT_BET);
@@ -83,13 +61,16 @@ export default function AbyssAnchor() {
   useEffect(() => { betRef.current = bet; }, [bet]);
 
   // ----- place a bet during the betting window -----
+  // A queued engine command since E5 (docs/06 §13, delta D4). The engine
+  // validates against round state (phase, one bet per round); whether the
+  // player can afford the bet is a wallet question answered here, before
+  // the command is submitted (§3). The debit rides the betPlaced event.
   const placeBet = useCallback(() => {
     if (phaseRef.current !== "idle") return;
     if (participatingRef.current) return;
     const b = betRef.current;
     if (b <= 0 || b > balance) return;
-    setBalance((prev) => +(prev - b).toFixed(2));
-    setParticipating(true);
+    engineRef.current?.submit({ type: "placeBet", amount: b });
   }, [balance]);
 
   // ----- betting countdown display (100 ms UI refresh) -----
@@ -108,29 +89,22 @@ export default function AbyssAnchor() {
   }, [phase]);
 
   // ----- cashout (money is locked in, but anchor keeps descending) -----
-  // Still a direct callback reading the rendered multiplier — it becomes a
-  // queued engine command with sanctioned delta D4 in E5.
+  // A queued engine command since E5 (sanctioned delta D4): applied at the
+  // next tick boundary with the tick-authoritative multiplier, not this
+  // render's. Settlement rides the cashedOut event listener in the game loop.
   const cashOut = useCallback(() => {
     if (phaseRef.current !== "diving") return;
     if (!participatingRef.current) return;
     if (hasCashedRef.current) return;
-    const m = multiplier;
-    const win = +(roundBetRef.current * m).toFixed(2);
-    setBalance((b) => +(b + win).toFixed(2));
-    setLastWin({ amount: win, mult: m });
-    setHistory((h) => [{ mult: m, crashed: false }, ...h].slice(0, HISTORY_LIMIT));
-    hasCashedRef.current = true;
-    setHasCashed(true);
-    setCashFlash(true);
-    setTimeout(() => setCashFlash(false), CASH_FLASH_MS);
+    engineRef.current?.submit({ type: "cashOut" });
     // stay in "diving" — anchor continues until the chain snaps.
-  }, [multiplier]);
+  }, []);
 
-  // ----- chest pick — applied by the engine state machine (E4) -----
+  // ----- chest pick — a queued engine command since E5 (D4) -----
   // Chest math, the result timer and the return to betting are machine-owned;
   // display + settlement ride the chestPicked event listener in the game loop.
   const pickChest = useCallback((id: 0 | 1 | 2) => {
-    engineRef.current?.pickChest(id);
+    engineRef.current?.submit({ type: "pickChest", chestId: id });
   }, []);
 
   // reset per-round flags whenever we return to the betting window
@@ -169,14 +143,14 @@ export default function AbyssAnchor() {
         }
       }
 
-      const worldY = worldYRef.current;
+      const worldY = engine.worldY;
       renderer.frame(
         {
           phase: phaseRef.current,
           worldY,
           depthRatio: Math.min(1, worldY / CHAIN_MAX_DEPTH),
-          boost: boostRef.current,
-          creatures: creaturesRef.current,
+          boost: engine.boost,
+          creatures: engine.creatures,
           crashed: phaseRef.current === "crashed",
           shipImpact,
         },
@@ -184,73 +158,26 @@ export default function AbyssAnchor() {
       );
     };
 
-    // The diving-tick pipeline (docs/06 §6.3) — component-owned until E5.
-    // Since E4 the engine's round state machine owns all phases and timers
-    // and calls this body only while `diving`, once per fixed 60 Hz tick.
-    // D1 (E4): the multiplier's elapsed time reads the simulation clock.
-    // D3 (E4): a terminal outcome (crash / sea floor) ends the pipeline for
-    // this tick; the machine applies the transition and its entry actions.
-    const stepSimulation = (dt: number): DivingTickOutcome | void => {
-      let m = multiplierAt(engine.diveElapsed);
-      // boost decays
-      if (boostRef.current > 0) {
-        boostRef.current = Math.max(0, boostRef.current - dt * BOOST_DECAY_PER_SECOND);
-        m += boostRef.current * BOOST_MULTIPLIER_BONUS; // small bump while active
-        setBoost(boostRef.current);
-      }
-
-      // crash check — terminal (D3); the crashed listener clamps the display
-      if (m >= engine.crashAt) return "crashed";
-      setMultiplier(m);
-
-      // descent
-      const speed = descentSpeed(m) * (1 + boostRef.current * BOOST_SPEED_FACTOR);
-      worldYRef.current += speed * dt;
-
-      // spawn creatures (world-stream draws, docs/06 §11)
-      while (worldYRef.current + SPAWN_AHEAD_PX > nextSpawnAtRef.current) {
-        creaturesRef.current.push(
-          rollCreature(nextSpawnAtRef.current, nextCreatureId.current++, worldRng),
-        );
-        nextSpawnAtRef.current += CREATURE_SPAWN_EVERY - worldRng.next() * SPAWN_JITTER_PX;
-      }
-
-      // collision with goldfish → boost
-      const anchorWorldY = worldYRef.current + ANCHOR_WORLD_OFFSET_PX;
-      for (const c of creaturesRef.current) {
-        if (c.consumed) continue;
-        const dy = Math.abs(c.worldY - anchorWorldY);
-        if (dy < COLLISION_DY_PX && Math.abs(c.x - 0.5) < COLLISION_DX_FRAC) {
-          if (c.kind === "goldfish") {
-            c.consumed = true;
-            boostRef.current = Math.min(1, boostRef.current + BOOST_GAIN_PER_GOLDFISH);
-            setBoost(boostRef.current);
-          }
-        }
-      }
-
-      // sea floor → SHIP IMPACT — terminal (D3); the machine samples the
-      // jackpot and the shipImpact listener below settles and displays it
-      if (worldYRef.current >= CHAIN_MAX_DEPTH) return "seaFloor";
-    };
-
-    const engine = new GameEngine({ authority: roundAuthority, divingTick: stepSimulation });
+    // Since E5 the diving pipeline (docs/06 §6.3) lives inside the engine
+    // (DiveSimulation, §9); the world state read above (worldY, boost,
+    // creatures) is pulled from the engine per frame (§12 pull model).
+    const engine = new GameEngine({ authority: roundAuthority, worldRng });
     engineRef.current = engine;
 
-    // Settlement + display listeners (§21 E4: the settlement listener is
-    // extracted from the old inline transition code; §12 event edge). All
-    // money math is verbatim — the engine computes outcomes, never balances
-    // (§3). UI flash timings (CASH/JACKPOT_FLASH_MS) stay here per §8.
+    // Settlement + display listeners (§3, §12: the settlement layer
+    // subscribes to engine events and owns all money math — verbatim; the
+    // engine computes outcomes, never balances). UI flash timings
+    // (CASH/JACKPOT_FLASH_MS) stay here per §8.
     const subscriptions = [
       engine.events.on("stateChanged", ({ to }) => {
         setPhase(ENGINE_STATE_TO_PHASE[to]);
       }),
+      engine.events.on("betPlaced", ({ amount }) => {
+        setBalance((prev) => +(prev - amount).toFixed(2));
+        setParticipating(true);
+      }),
       engine.events.on("diveStarted", () => {
         roundBetRef.current = participatingRef.current ? betRef.current : 0;
-        worldYRef.current = 0;
-        creaturesRef.current = [];
-        nextSpawnAtRef.current = DIVE_SPAWN_DEPTH_PX;
-        boostRef.current = 0;
         setBoost(0);
         setMultiplier(1);
         setChests(null);
@@ -258,6 +185,16 @@ export default function AbyssAnchor() {
         hasCashedRef.current = false;
         setHasCashed(false);
         setCashFlash(false);
+      }),
+      engine.events.on("cashedOut", ({ multiplier: m }) => {
+        const win = +(roundBetRef.current * m).toFixed(2);
+        setBalance((b) => +(b + win).toFixed(2));
+        setLastWin({ amount: win, mult: m });
+        setHistory((h) => [{ mult: m, crashed: false }, ...h].slice(0, HISTORY_LIMIT));
+        hasCashedRef.current = true;
+        setHasCashed(true);
+        setCashFlash(true);
+        setTimeout(() => setCashFlash(false), CASH_FLASH_MS);
       }),
       engine.events.on("crashed", ({ multiplier: m }) => {
         setMultiplier(m);
@@ -311,6 +248,14 @@ export default function AbyssAnchor() {
       const wallDt = (ts - last) / 1000;
       lastTsRef.current = ts;
       engine.advance(wallDt);
+      // HUD mirror of the continuous diving values (multiplier, boost) —
+      // engine state read by pull (§12), synced once per frame while the
+      // dive runs; the locked values outside diving arrive via the event
+      // listeners above. The full D5 per-frame public-state read is E6.
+      if (engine.state === "diving") {
+        setMultiplier(engine.multiplier);
+        setBoost(engine.boost);
+      }
       renderFrame(Math.min(MAX_TICK_SECONDS, wallDt));
       rafRef.current = requestAnimationFrame(frame);
     };

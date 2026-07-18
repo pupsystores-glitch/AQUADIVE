@@ -1,29 +1,28 @@
 // RoundStateMachine — the engine-owned round state machine
-// (docs/06_ENGINE_ARCHITECTURE.md §5, §6; Sprint 3, Commit E4).
+// (docs/06_ENGINE_ARCHITECTURE.md §5, §6; Sprint 3, Commits E4–E5).
 //
-// Owns the five engine states, the round lifecycle timers, roundId, and
-// the transition entry actions (which consult the RoundAuthority, §16).
-// All timed transitions are simulation-time durations quantized to whole
-// ticks (§8) and stored as integer tick counts — deterministic, no float
-// drift. The component's setTimeout/setInterval chains are deleted in this
-// same commit; their phase re-check guards are replaced structurally:
-// exactly one pending timer exists, owned by the current state, so a stale
-// timer can never fire in another state (§5's "cancelled on exit" rule
-// falls out of the representation).
+// Owns the five engine states, the round lifecycle timers, roundId, the
+// participant round state (§2: bet placed this round, cashed-out flag and
+// multiplier, chosen chest — never the wallet), and the transition entry
+// actions (which consult the RoundAuthority, §16, and drive the
+// DiveSimulation, §9). All timed transitions are simulation-time durations
+// quantized to whole ticks (§8) and stored as integer tick counts —
+// deterministic, no float drift. Exactly one pending timer exists, owned by
+// the current state, so a stale timer can never fire in another state.
 //
-// Sanctioned deltas landing here (§7.1): D1 — phase timers and the
-// multiplier's dive-elapsed time base (diveStartedAt) run on the
-// simulation clock; D3 — the diving pipeline reports a terminal outcome
-// and has already ended its tick when the machine transitions, so crash
-// and sea-floor can never double-fire.
-//
-// Mid-migration seams (§20 risk 2, removed in E5): the diving pipeline
-// body is still component-owned (injected `divingTick`, called only while
-// `diving`); `crashAt` is exposed for that body's crash guard; pickChest
-// applies immediately when called (D4 — tick-boundary commands — is E5).
+// Sanctioned deltas (§7.1): D1 (E4) — phase timers and the multiplier's
+// dive-elapsed time base (diveStartedAt) run on the simulation clock; D3
+// (E4) — the diving pipeline reports a terminal outcome and has already
+// ended its tick when the machine transitions, so crash and sea-floor can
+// never double-fire; D4 (E5) — commands are validated and applied here at
+// the tick boundary (GameEngine drains its queue into applyCommand before
+// stepping), so cashout uses the tick-authoritative multiplier, never a
+// stale render's. Invalid commands are rejected and reported (§18 ring 1) —
+// never silently applied, never thrown.
 
 import type { Phase } from "@/rendering/scene-renderer";
 import { TICK_SECONDS } from "./clock";
+import type { EngineCommand } from "./commands";
 import type { BonusChest } from "./domain/outcomes";
 import {
   BETTING_WINDOW_SECONDS,
@@ -33,9 +32,7 @@ import {
 } from "./domain/tuning";
 import type { EngineEventMap, EngineStateName, EventBus } from "./events";
 import type { RoundAuthority } from "./round-authority";
-
-/** Terminal outcome of one diving tick (§6.3 steps 4/8): reported by the pipeline, applied by the machine. */
-export type DivingTickOutcome = "crashed" | "seaFloor";
+import type { DiveSimulation } from "./simulation";
 
 /** The fixed §5 projection: engine states → renderer Phase strings. The RenderState contract is untouched. */
 export const ENGINE_STATE_TO_PHASE: Record<EngineStateName, Phase> = {
@@ -46,13 +43,21 @@ export const ENGINE_STATE_TO_PHASE: Record<EngineStateName, Phase> = {
   bonus: "bonus",
 };
 
+/** Participant round state (§2) — state about the player's *round*, never their wallet (§3). */
+export interface ParticipantRoundState {
+  betAmount: number;
+  cashedOut: boolean;
+  /** Multiplier locked at cashout (manual or jackpot auto-cash); null until then. */
+  cashedOutAt: number | null;
+}
+
 /** Duration (ms) → whole simulation ticks (§8 quantization). */
 const ticksFor = (ms: number): number => Math.round(ms / 1000 / TICK_SECONDS);
 
 interface RoundStateMachineDeps {
   authority: RoundAuthority;
   events: EventBus<EngineEventMap>;
-  divingTick: (dtSeconds: number) => DivingTickOutcome | void;
+  sim: DiveSimulation;
 }
 
 export class RoundStateMachine {
@@ -66,6 +71,7 @@ export class RoundStateMachine {
   private jackpotMultiplier = 0;
   private chests: [BonusChest, BonusChest, BonusChest] | null = null;
   private chosenChestId: 0 | 1 | 2 | null = null;
+  private _participant: ParticipantRoundState | null = null;
 
   constructor(private readonly deps: RoundStateMachineDeps) {}
 
@@ -82,7 +88,7 @@ export class RoundStateMachine {
     return this.countdownTicks * TICK_SECONDS;
   }
 
-  /** This round's crash point. Mid-migration read for the component diving body; internal from E5. */
+  /** This round's crash point — authority-secret (§14); never exposed on the facade. */
   get crashAt(): number {
     return this._crashAt;
   }
@@ -90,6 +96,10 @@ export class RoundStateMachine {
   /** simTime at dive start — the D1 time base for the multiplier. Meaningful from the first dive on. */
   get diveStartedAt(): number {
     return this._diveStartedAt;
+  }
+
+  get participant(): Readonly<ParticipantRoundState> | null {
+    return this._participant;
   }
 
   /** One simulation tick (§5 transition table). Called by GameEngine once per consumed tick. */
@@ -100,7 +110,7 @@ export class RoundStateMachine {
         if (this.countdownTicks <= 0) this.enterDiving(simTime);
         break;
       case "diving": {
-        const outcome = this.deps.divingTick(dtSeconds);
+        const outcome = this.deps.sim.tick(simTime - this._diveStartedAt, dtSeconds, this._crashAt);
         if (outcome === "crashed") this.enterCrashed();
         else if (outcome === "seaFloor") this.enterImpact();
         break;
@@ -120,26 +130,65 @@ export class RoundStateMachine {
   }
 
   /**
-   * Apply a chest pick (§5: bonus ──[pickChest]→ apply chest ──[CHEST_RESULT
-   * duration]→ betting). Pre-D4 seam: applies immediately when called; E5
-   * turns this into a queued command. Invalid picks are rejected and
-   * reported (§5, §18 ring 1), never silently applied.
+   * Validate and apply one queued command against the *current* state
+   * (§13: validated at the tick they apply, not at submit time; D4).
+   * Called by GameEngine at the tick boundary, before step().
    */
-  pickChest(chestId: 0 | 1 | 2): void {
-    if (this._state !== "bonus" || this.chosenChestId !== null || this.chests === null) {
-      this.deps.events.emit("commandRejected", {
-        roundId: this._roundId,
-        command: { type: "pickChest", chestId },
-        reason: this._state !== "bonus" ? "not-in-bonus" : "chest-already-picked",
-      });
-      return;
+  applyCommand(command: EngineCommand): void {
+    switch (command.type) {
+      case "placeBet":
+        this.applyPlaceBet(command);
+        break;
+      case "cashOut":
+        this.applyCashOut(command);
+        break;
+      case "pickChest":
+        this.applyPickChest(command);
+        break;
     }
-    this.chosenChestId = chestId;
-    const chest = this.chests[chestId];
+  }
+
+  private reject(command: EngineCommand, reason: string): void {
+    this.deps.events.emit("commandRejected", { roundId: this._roundId, command, reason });
+  }
+
+  // §5/§6: one bet per participant per round, only while betting. Whether
+  // the player can afford it is a wallet question answered before the
+  // command is submitted (§3) — the engine never sees a balance.
+  private applyPlaceBet(command: EngineCommand & { type: "placeBet" }): void {
+    if (this._state !== "betting") return this.reject(command, "not-in-betting");
+    if (this._participant !== null) return this.reject(command, "already-participating");
+    if (!(command.amount > 0)) return this.reject(command, "invalid-amount");
+    this._participant = { betAmount: command.amount, cashedOut: false, cashedOutAt: null };
+    this.deps.events.emit("betPlaced", { roundId: this._roundId, amount: command.amount });
+  }
+
+  // §5: manual cashout is not a transition — the flag flips, the state stays
+  // `diving`, the anchor keeps descending. D4: the multiplier is the
+  // tick-authoritative value from the last completed pipeline tick.
+  private applyCashOut(command: EngineCommand & { type: "cashOut" }): void {
+    if (this._state !== "diving") return this.reject(command, "not-diving");
+    if (this._participant === null) return this.reject(command, "not-participating");
+    if (this._participant.cashedOut) return this.reject(command, "already-cashed-out");
+    const multiplier = this.deps.sim.multiplier;
+    this._participant.cashedOut = true;
+    this._participant.cashedOutAt = multiplier;
+    this.deps.events.emit("cashedOut", { roundId: this._roundId, multiplier });
+  }
+
+  // §5: bonus ──[pickChest]→ apply chest ──[CHEST_RESULT duration]→ betting.
+  private applyPickChest(command: EngineCommand & { type: "pickChest" }): void {
+    if (this._state !== "bonus" || this.chests === null) {
+      return this.reject(command, "not-in-bonus");
+    }
+    if (this.chosenChestId !== null) return this.reject(command, "chest-already-picked");
+    this.chosenChestId = command.chestId;
+    const chest = this.chests[command.chestId];
     const finalMultiplier = +(this.jackpotMultiplier * chest.multiplier).toFixed(2);
+    this.deps.sim.lockMultiplier(finalMultiplier);
     this.deps.events.emit("chestPicked", {
       roundId: this._roundId,
-      chestId,
+      chestId: command.chestId,
       chestMultiplier: chest.multiplier,
       finalMultiplier,
     });
@@ -152,9 +201,10 @@ export class RoundStateMachine {
     this.deps.events.emit("stateChanged", { roundId: this._roundId, from, to });
   }
 
-  // entry(diving), §5: the authority fixes crashAt; per-round outcome data
-  // resets; diveStartedAt := simTime. World reset and participant-flag
-  // reset stay component-owned until E5 — they ride the diveStarted event.
+  // entry(diving), §5/§6.2: the authority fixes crashAt; the world resets
+  // (worldY = 0, creatures cleared, spawn cursor reset, boost = 0,
+  // multiplier = 1); per-round outcome data resets; diveStartedAt := simTime.
+  // The participant (bet placed during betting) rides into the round.
   private enterDiving(simTime: number): void {
     this._crashAt = this.deps.authority.sampleCrashPoint();
     this._diveStartedAt = simTime;
@@ -162,25 +212,31 @@ export class RoundStateMachine {
     this.chests = null;
     this.chosenChestId = null;
     this.timerTicks = null;
+    this.deps.sim.reset();
     this.transition("diving");
     this.deps.events.emit("diveStarted", { roundId: this._roundId });
   }
 
-  // entry(crashed), §5: the multiplier clamps to crashAt (the event carries
-  // it); CRASH_BANNER duration → betting. Replaces the CRASH_BANNER_MS
-  // setTimeout and its `phase === "crashed"` re-check guard.
+  // entry(crashed), §5: the multiplier clamps to crashAt (locked in the
+  // simulation, carried by the event); CRASH_BANNER duration → betting.
   private enterCrashed(): void {
+    this.deps.sim.lockMultiplier(this._crashAt);
     this.timerTicks = ticksFor(CRASH_BANNER_MS);
     this.transition("crashed");
     this.deps.events.emit("crashed", { roundId: this._roundId, multiplier: this._crashAt });
   }
 
-  // entry(impact), §5: the authority samples the jackpot; SHIP_IMPACT_TO_
-  // CHESTS duration → bonus. Replaces that setTimeout and its phase
-  // re-check guard; the old one-shot `bonusTriggered` flag is structural
-  // now (diving has been exited).
+  // entry(impact), §5/§6.5: the authority samples the jackpot; the jackpot
+  // multiplier locks; a participant not yet cashed out is auto-cashed at it
+  // (settlement credits on the shipImpact event, as today); SHIP_IMPACT_TO_
+  // CHESTS duration → bonus.
   private enterImpact(): void {
     this.jackpotMultiplier = this.deps.authority.sampleJackpot();
+    this.deps.sim.lockMultiplier(this.jackpotMultiplier);
+    if (this._participant !== null && !this._participant.cashedOut) {
+      this._participant.cashedOut = true;
+      this._participant.cashedOutAt = this.jackpotMultiplier;
+    }
     this.timerTicks = ticksFor(SHIP_IMPACT_TO_CHESTS_MS);
     this.transition("impact");
     this.deps.events.emit("shipImpact", {
@@ -198,14 +254,13 @@ export class RoundStateMachine {
   }
 
   // entry(betting), §5/§6: the round ends, the next roundId begins, the
-  // countdown restarts. Replaces the countdown setInterval as the owner of
-  // the betting→diving transition (the 100 ms interval that remains in the
-  // component is display-only until delta D5 deletes it in E6).
+  // countdown restarts, the participant round state clears.
   private enterBetting(outcome: "crashed" | "jackpot"): void {
     this.deps.events.emit("roundEnded", { roundId: this._roundId, outcome });
     this._roundId++;
     this.countdownTicks = ticksFor(BETTING_WINDOW_SECONDS * 1000);
     this.timerTicks = null;
+    this._participant = null;
     this.transition("betting");
     this.deps.events.emit("bettingOpened", { roundId: this._roundId });
   }

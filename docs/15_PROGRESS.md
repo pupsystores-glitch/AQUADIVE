@@ -16,13 +16,21 @@ Rules:
 
 Current Status:
 
-Sprint 3 (Game Engine, TASK 006) ACTIVE — Commits 1 (blueprint), 2 (E1), 3 (E2) and 4 (E3) approved; Commit 5 (E4, round state machine) delivered, awaiting approval before E5
+Sprint 3 (Game Engine, TASK 006) ACTIVE — Commits 1 (blueprint), 2 (E1), 3 (E2), 4 (E3) and 5 (E4) approved; Commit 6 (E5, simulation systems + command queue) delivered, awaiting approval before E6
 
 Completed Tasks:
 
 ---
 
 ## TASK 006 — Sprint 3: Game Engine (In Progress)
+
+### Commit 6 — E5: Simulation Systems + Command Queue (D4)
+
+- Date: 2026-07-18
+- Summary: The remaining simulation systems move into the engine (docs/06 §21 step E5; **sanctioned delta D4 lands here**). `DiveSimulation` (`src/engine/simulation.ts`) owns the world — worldY, boost, multiplier, the flat creature array and its spawn cursor (§10) — and the §6.3 diving pipeline moved **verbatim** from the component's `stepSimulation` closure: multiplier from dive-elapsed sim time → boost decay + bonus → crash check (terminal, D3) → descent integration → spawn-ahead creature spawning (world Rng stream, §11) → goldfish collision → boost gain → sea-floor check (terminal). The E3/E4 `divingTick` seam is deleted; entry(diving) resets the world engine-side. The command queue replaces all direct gameplay callbacks (§13): `GameEngine.submit()` queues, and each consumed tick validates + applies queued commands **at the tick boundary, before the machine steps** — `placeBet` / `cashOut` / `pickChest`, with per-reason `commandRejected` events (§18 ring 1) and no listener reentrancy (§12). D4: cashout now uses the tick-authoritative multiplier instead of the component's last-rendered value (≤ one frame difference; the engine value can only be more current). Participant round state (§2) lives in the machine (`betAmount`/`cashedOut`/`cashedOutAt`, cleared at entry(betting), jackpot auto-cash at entry(impact)); settlement stays outside — the affordability check runs wallet-side before submit, the debit rides the new `betPlaced` listener, cashout credit/history/flash ride the `cashedOut` listener, money math verbatim (§3). The component's world refs and pipeline are gone; renderer inputs (worldY, boost, creatures) and the diving HUD values pull engine state per frame (§12 pull model). Rendering and projection logic untouched; the countdown display interval remains until D5 (E6).
+- Files modified: `src/engine/simulation.ts` (new), `src/engine/simulation.test.ts` (new), `src/engine/state-machine.ts` (drives the simulation; participant state; `applyCommand`), `src/engine/game-engine.ts` (command queue + world-state getters; `divingTick`/`crashAt`/`diveElapsed` seams removed — crashAt is authority-secret, §14), `src/engine/index.ts` (public surface trimmed to the facade + edges), `src/engine/state-machine.test.ts` (harness drives the real pipeline; command tests), `src/engine/game-engine.test.ts` (D4 boundary + reentrancy tests), `src/components/AbyssAnchor.tsx` (507 lines, was 563), `src/engine/README.md`, docs 15/16.
+- Architectural decisions: the simulation is a separate module the state machine drives (systems vs. machine per §9/§5 split); command validation lives with the state it validates against (machine); the facade exposes plain world-state getters as the documented mid-migration seam until E6's projections; the engine barrel no longer exports domain functions (§4 — only the facade surface).
+- Risks: behavioral drift — mitigated by moving the pipeline byte-for-byte and rewriting the transition tests to drive the *real* pipeline on deterministic Rngs (66 tests green, incl. new pipeline characterization + command-queue pins); the chest result timer now starts at the tick boundary where the pick applies (≤ one tick shift, within D4's sanctioned scope). Validation: tsc clean; lint at the 10 + 6 baseline (zero new findings); production build passes.
 
 ### Commit 5 — E4: Round State Machine (Timers on the Simulation Clock)
 

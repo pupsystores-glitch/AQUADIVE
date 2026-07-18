@@ -51,10 +51,24 @@ RoundAuthority (§16); transitions emit the §12 events (stateChanged,
 diveStarted, crashed, shipImpact, chestsRevealed, chestPicked, roundEnded,
 bettingOpened, commandRejected). `ENGINE_STATE_TO_PHASE` is the fixed §5
 projection to renderer Phase strings. `clock.ts` holds the §7 tick
-constants. Remaining seams (E5 removes): the diving pipeline body is
-injected (`divingTick`, called only while diving; returns a terminal
-outcome — D3); `crashAt`/`diveElapsed` exposed for it; pickChest applies
-immediately (D4 pending).
+constants.
 
-Next — E5: simulation systems + command queue (D4). E6: EngineDriver +
-projections + snapshots (D5).
+Done — E5 (simulation systems + command queue, sanctioned delta D4):
+`simulation.ts` — `DiveSimulation` owns the world (worldY, boost,
+multiplier, the flat creature array + spawn cursor, §10) and the §6.3
+diving pipeline moved verbatim from the component (multiplier → boost →
+crash check → descent → spawner → collision → sea-floor check; terminal
+outcomes end the tick, D3). The E3/E4 `divingTick` seam is deleted; the
+state machine drives the simulation directly and owns the participant
+round state (§2: betAmount, cashedOut, cashedOutAt — never the wallet).
+`GameEngine.submit()` queues `EngineCommand`s; every queued command is
+validated and applied at the next tick boundary (D4), before the machine
+steps — `placeBet`/`cashOut`/`pickChest` all flow through it (rejections
+emit `commandRejected`, §18 ring 1; cashout uses the tick-authoritative
+multiplier). The facade exposes the world reads (worldY, boost,
+multiplier, creatures) as plain getters until the E6 projections; the
+barrel no longer exports the domain functions — the facade and its edges
+are the whole public surface.
+
+Next — E6: EngineDriver owns rAF; RenderState/RenderTime/public-state
+projections; snapshot()/restore(); component becomes a UI shell (D5).
