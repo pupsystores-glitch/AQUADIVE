@@ -16,13 +16,22 @@ Rules:
 
 Current Status:
 
-Sprint 3 (Game Engine, TASK 006) ACTIVE — Commit 1 (engine architecture blueprint) delivered, awaiting approval before E1
+Sprint 3 (Game Engine, TASK 006) ACTIVE — Commit 1 approved (D1–D5 ratified); Commit 2 (E1, test harness + characterization tests) delivered, awaiting approval before E2
 
 Completed Tasks:
 
 ---
 
 ## TASK 006 — Sprint 3: Game Engine (In Progress)
+
+### Commit 2 — E1: Test Harness + Characterization Tests
+
+- Date: 2026-07-18
+- Summary: vitest 4 added as a devDependency (approved with the Commit 1 sign-off, per §20 risk 4) with a minimal `vitest.config.ts` (node environment, native tsconfig-paths resolution; kept separate from the app's TanStack Start vite config) and an `npm test` script. 26 characterization tests pin the current behavior before any code moves (§20 risk 1): the pure math in `src/lib/abyss-game.ts` — `multiplierAt` curve values, `timeForMultiplier` values + round-trip, `descentSpeed` values + 640 px/s cap, `formatMultiplier` (including its `toFixed` float artifact), `chainTier` band boundaries; the outcome distributions via stubbed `Math.random` draw sequences (exact branch boundaries and band arithmetic — deterministic, no statistical assertions) plus hard-bounds sampling — `sampleCrashPoint` (3% instant-crash branch, clamp [1.01, 200]), `rollBonusChests` (60/32/8 bands, 2-decimal rounding, ids/opened structure), `sampleJackpot` (50/35/15 bands, [50, 500]); and verbatim-move tripwires pinning every value in `src/game/config.ts` and `src/game/constants.ts` (§9: "all formulas, tables and constants move verbatim"). The known economics flaws (TASK 001) are pinned as-is, deliberately. One non-test source change: `sampleJackpot` in `AbyssAnchor.tsx` gained an `export` keyword (behavior-neutral) so it can be pinned in place before E2 moves it to `RoundAuthority` — this adds one `react-refresh/only-export-components` lint warning that E2 removes with the move.
+- Files modified: `package.json`/`package-lock.json` (vitest devDependency + `test` script), `vitest.config.ts` (new), `tsconfig.json` (include `vitest.config.ts`), `src/lib/abyss-game.test.ts` (new), `src/components/AbyssAnchor.test.ts` (new), `src/game/config.test.ts` (new), `src/game/constants.test.ts` (new), `src/components/AbyssAnchor.tsx` (export keyword only), docs tracking updates.
+- Architectural decisions: characterization pins golden values of today's implementation (a failing pin means behavior drifted — the offending commit stops); randomized functions are pinned deterministically by stubbing the ambient `Math.random` (the RNG injection seam arrives in E2 — tests will migrate to seeded `Rng` injection then); distribution tests assert exact branch mappings and hard clamp bounds only, never frequencies, so the suite cannot flake; the depth-banded creature kind table cannot be pinned in E1 (it is a closure inside the component) — its characterization lands in the commit that extracts it (E2/E5), pinned at the new location in the same commit.
+- Verification: 26/26 tests green; `tsc --noEmit` clean; production build clean; dev-server SSR smoke test HTTP 200 with canvas markup; lint 33 errors + 7 warnings vs the 33 + 6 baseline — the single new warning is the documented `sampleJackpot` export (temporary until E2); zero findings in the new test files. New lint baseline recorded: 33 errors + 7 warnings.
+- Risks: none to the running game (the only runtime change is an `export` keyword). The harness itself is new infrastructure; its value depends on E2+ keeping the pins green.
 
 ### Commit 1 — Engine Architecture Planning (documentation only)
 

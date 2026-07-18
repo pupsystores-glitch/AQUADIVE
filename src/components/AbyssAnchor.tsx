@@ -562,7 +562,9 @@ export default function AbyssAnchor() {
 
 // Jackpot multiplier when the anchor reaches the sea floor.
 // Weighted: 50% → 50–100×, 35% → 100–200×, 15% → 200–500×.
-function sampleJackpot(): number {
+// Exported only so the E1 characterization tests can pin the distribution
+// before E2 moves it into the engine's RoundAuthority (docs/06 §20 risk 5).
+export function sampleJackpot(): number {
   const r = Math.random();
   let m: number;
   if (r < 0.5) m = 50 + Math.random() * 50;

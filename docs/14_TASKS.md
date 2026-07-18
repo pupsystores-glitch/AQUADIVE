@@ -2,7 +2,7 @@
 
 Status:
 
-TASK 006 active — Sprint 3 (Phase 5, Game Engine). Commit 1 (planning, `docs/06_ENGINE_ARCHITECTURE.md`) delivered; awaiting approval before E1
+TASK 006 active — Sprint 3 (Phase 5, Game Engine). Commit 1 (planning) approved (D1–D5 ratified); Commit 2 (E1, test harness + characterization tests) delivered; awaiting approval before E2
 
 ---
 
@@ -62,7 +62,7 @@ Sprint 3 — Game Engine (Phase 5)
 
 Status:
 
-Active (started 2026-07-18) — Commit 1 delivered: `docs/06_ENGINE_ARCHITECTURE.md` engine architecture blueprint (design only, no code). Extraction commits E1–E6 pending, one per approval
+Active (started 2026-07-18) — Commit 1 (`docs/06_ENGINE_ARCHITECTURE.md` blueprint) approved 2026-07-18: D1–D5 ratified, vitest devDependency approved. Commit 2 (E1) delivered: vitest harness + 26 characterization tests pinning the pure math, outcome distributions and tuning constants. Extraction commits E2–E6 pending, one per approval
 
 ---
 
